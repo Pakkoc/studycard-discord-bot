@@ -20,6 +20,7 @@ async def main() -> None:
 		repo_root / "assets" / "db" / "migrations" / "migration_003_drop_users_language.sql",
 		repo_root / "assets" / "db" / "migrations" / "migration_004_add_users_nickname.sql",
 		repo_root / "assets" / "db" / "migrations" / "migration_005_add_users_student_no.sql",
+		repo_root / "assets" / "db" / "migrations" / "migration_006_enable_rls.sql",
 	]
 	for m in migrations:
 		await execute_sql_file(str(m))
