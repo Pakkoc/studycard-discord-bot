@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 # Level titles (1..10)
 LEVEL_TITLES: list[str] = [
@@ -32,7 +33,13 @@ def calculate_xp_gain(duration_seconds: int) -> int:
     """
     if duration_seconds <= 0:
         return 0
-    return duration_seconds // 3600
+    # Allow override from environment, default to 3600 seconds per XP
+    try:
+        seconds_per_xp = int(os.getenv("FOCUS_SECONDS_PER_XP", "3600").strip())
+    except Exception:
+        seconds_per_xp = 3600
+    seconds_per_xp = max(1, seconds_per_xp)
+    return duration_seconds // seconds_per_xp
 
 
 def total_xp_required_for_level(level: int) -> int:

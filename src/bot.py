@@ -11,6 +11,17 @@ from typing import Optional
 from dotenv import load_dotenv
 
 
+def get_env_int(name: str, default: int) -> int:
+    """Read integer from environment variables with a safe fallback."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
 def load_environment_variables() -> None:
     load_dotenv()
 
@@ -79,7 +90,8 @@ async def main() -> None:
             try:
                 from core.database import finalize_open_sessions
 
-                finalized = await finalize_open_sessions(min_duration_seconds=180)
+                min_session_sec = get_env_int("VOICE_MIN_SESSION_SEC", 180)
+                finalized = await finalize_open_sessions(min_duration_seconds=min_session_sec)
                 if finalized:
                     logging.info("Finalized %s open sessions from previous run", finalized)
             except Exception as finalize_exc:
@@ -205,8 +217,8 @@ async def main() -> None:
     # Read comma-separated channel IDs from .env POST_XP_CHANNEL_IDS
     channels_env = os.getenv("POST_XP_CHANNEL_IDS", "").replace(" ", "").strip()
     POST_XP_CHANNEL_IDS: set[int] = set(int(tok) for tok in channels_env.split(",") if tok.isdigit())
-    POST_XP_AMOUNT = 3
-    POST_XP_COOLDOWN_SEC = 60
+    POST_XP_AMOUNT = get_env_int("POST_XP_AMOUNT", 3)
+    POST_XP_COOLDOWN_SEC = get_env_int("POST_XP_COOLDOWN_SEC", 60)
     _last_post_ts: dict[tuple[int, int], float] = {}
 
     @bot.event
@@ -339,8 +351,9 @@ async def main() -> None:
             logging.info(
                 "Voice session ended: user=%s guild=%s duration=%ss", member.id, guild_id, duration
             )
-            # Persist to DB for sessions meeting the minimum duration threshold (180s)
-            if duration >= 180 and record_voice_session:
+            # Persist to DB for sessions meeting the minimum duration threshold
+            min_session_sec = get_env_int("VOICE_MIN_SESSION_SEC", 180)
+            if duration >= min_session_sec and record_voice_session:
                 try:
                     result = await record_voice_session(
                         member.id, guild_id, started_at, ended_at, duration
@@ -371,16 +384,12 @@ async def main() -> None:
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    # Load basic slash commands
+    # Load only the profile slash command
     try:
-        await bot.load_extension("cogs.slash_basic")
-        logging.info("Loaded extension cogs.slash_basic")
         await bot.load_extension("cogs.profile_cog")
         logging.info("Loaded extension cogs.profile_cog")
-        await bot.load_extension("cogs.streak_cog")
-        logging.info("Loaded extension cogs.streak_cog")
     except Exception as exc:
-        logging.warning("Failed to load extension cogs.slash_basic: %s", exc)
+        logging.warning("Failed to load extension cogs.profile_cog: %s", exc)
 
     await bot.start(token)
 

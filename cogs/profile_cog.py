@@ -5,18 +5,44 @@ from discord import app_commands
 from discord.ext import commands
 from io import BytesIO
 from datetime import datetime, timezone
+import os
 
-from core.database import fetch_user_stats, fetch_recent_streak_days, fetch_month_streak_days
-from core.leveling import calculate_level, compute_level_progress
+from core.database import fetch_user_stats, fetch_month_streak_days
+from core.leveling import compute_level_progress
 from core.imaging import (
     render_profile_card,
-    render_streak_calendar,
     compose_vertical_images,
     render_stats_and_month_calendar,
 )
 
 
-HOUSE_PATTERNS: list[tuple[str, str]] = [
+def _load_house_patterns_from_env() -> list[tuple[str, str]]:
+    """Parse HOUSE_PATTERNS env var like '키:라벨,키:라벨'.
+
+    - 각 항목은 콤마(,)로 구분
+    - 항목 내부는 콜론(:)으로 '키:라벨' 구성
+    - 공백은 자동으로 트림
+    - 잘못된 항목은 무시
+    """
+    raw = os.getenv("HOUSE_PATTERNS", "").strip()
+    patterns: list[tuple[str, str]] = []
+    if not raw:
+        return patterns
+    for item in raw.split(","):
+        part = item.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            continue
+        k, v = part.split(":", 1)
+        k = k.strip()
+        v = v.strip()
+        if k and v:
+            patterns.append((k, v))
+    return patterns
+
+
+HOUSE_PATTERNS: list[tuple[str, str]] = _load_house_patterns_from_env() or [
     ("소용돌이", "소용돌이"),
     ("펭도리야", "펭도리야"),
     ("노블레빗", "노블레빗"),
@@ -43,12 +69,55 @@ def compute_grade_by_join_date(joined_at: datetime | None, now: datetime | None 
     return (days // 365) + 1
 
 
+def is_house_leader(user: discord.abc.User | discord.Member) -> bool:
+    """Return True if the invoker may view others' profiles.
+
+    Priority:
+    1) HOUSE_LEADER_ROLE_IDS (comma-separated role IDs)
+    2) HOUSE_LEADER_ROLE_NAMES (comma-separated role names; exact match)
+    3) Default role name exact match: '기숙사장'
+    """
+    if not isinstance(user, discord.Member):
+        return False
+
+    # 1) Role IDs (highest priority)
+    raw_ids = os.getenv("HOUSE_LEADER_ROLE_IDS", "").strip()
+    if raw_ids:
+        role_ids: set[int] = set()
+        for tok in raw_ids.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            try:
+                role_ids.add(int(tok))
+            except Exception:
+                continue
+        if role_ids and any(r.id in role_ids for r in user.roles):
+            return True
+
+    # 2) Role names (exact match)
+    raw_names = os.getenv("HOUSE_LEADER_ROLE_NAMES", "").strip()
+    if raw_names:
+        names = {t.strip() for t in raw_names.split(",") if t.strip()}
+        if names and any((r.name or "") in names for r in user.roles):
+            return True
+
+    # 3) Default fallback
+    return any((r.name or "") == "기숙사장" for r in user.roles)
+
+
 class ProfileCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @app_commands.command(name="profile", description="프로필 카드 보기")
+    @app_commands.guild_only()
     async def profile(self, interaction: discord.Interaction, member: discord.Member | None = None):
+        # Only house leaders may view other users' profiles
+        if member is not None and member.id != interaction.user.id:
+            if not is_house_leader(interaction.user):
+                await interaction.response.send_message("타인의 프로필은 기숙사장만 조회할 수 있습니다.", ephemeral=True)
+                return
         target = member or interaction.user
         # Prefer server nickname if present
         # 서버 닉네임(멤버 별명) 우선 사용
