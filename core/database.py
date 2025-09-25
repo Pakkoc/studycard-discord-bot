@@ -226,35 +226,46 @@ async def record_voice_session(
                 duration_seconds,
             )
 
+            # Fetch previous aggregates for cumulative-based XP calculation
+            from core.leveling import calculate_xp_gain, calculate_level
+
+            prev_row = await conn.fetchrow(
+                """
+                SELECT COALESCE(total_seconds,0) AS total_seconds,
+                       COALESCE(xp,0) AS xp
+                FROM users
+                WHERE user_id=$1 AND guild_id=$2
+                FOR UPDATE
+                """,
+                user_id,
+                guild_id,
+            )
+            prev_total_seconds = int(prev_row["total_seconds"]) if prev_row else 0
+            old_total_xp = int(prev_row["xp"]) if prev_row else 0
+            old_level = calculate_level(old_total_xp)
+
             # Update aggregates (seconds)
-            await conn.execute(
+            new_total_seconds_row = await conn.fetchrow(
                 """
                 UPDATE users
                 SET total_seconds = COALESCE(total_seconds, 0) + $1,
                     last_seen_at = $2
-                WHERE user_id = $3 AND guild_id = $4;
+                WHERE user_id = $3 AND guild_id = $4
+                RETURNING total_seconds
                 """,
                 duration_seconds,
                 ended_at,
                 user_id,
                 guild_id,
             )
+            new_total_seconds = int(new_total_seconds_row["total_seconds"]) if new_total_seconds_row else prev_total_seconds + duration_seconds
 
-            # XP calculation and level update
-            from core.leveling import calculate_xp_gain, calculate_level
+            # Cumulative-based XP: compute delta seconds and convert to XP units
+            delta_seconds = max(0, new_total_seconds - prev_total_seconds)
+            xp_gain = calculate_xp_gain(delta_seconds)
 
-            # Fetch previous XP for level-up detection
-            prev_row = await conn.fetchrow(
-                "SELECT COALESCE(xp,0) AS xp FROM users WHERE user_id=$1 AND guild_id=$2",
-                user_id,
-                guild_id,
-            )
-            old_total_xp = int(prev_row["xp"]) if prev_row else 0
-            old_level = calculate_level(old_total_xp)
-
-            xp_gain = calculate_xp_gain(duration_seconds)
             if xp_gain > 0:
-                new_row = await conn.fetchrow(
+                updated_xp_row = await conn.fetchrow(
                     """
                     UPDATE users
                     SET xp = COALESCE(xp,0) + $1
@@ -265,7 +276,7 @@ async def record_voice_session(
                     user_id,
                     guild_id,
                 )
-                total_xp = int(new_row["xp"]) if new_row else old_total_xp
+                total_xp = int(updated_xp_row["xp"]) if updated_xp_row else old_total_xp
             else:
                 total_xp = old_total_xp
 
@@ -456,18 +467,43 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
                 )
 
                 if duration >= min_duration_seconds:
+                    # Fetch previous totals for cumulative XP
+                    from core.leveling import calculate_level, calculate_cumulative_xp_gain
+
+                    prev_row = await conn.fetchrow(
+                        "SELECT COALESCE(total_seconds,0) AS total_seconds, COALESCE(xp,0) AS xp FROM users WHERE user_id=$1 AND guild_id=$2 FOR UPDATE",
+                        user_id,
+                        guild_id,
+                    )
+                    prev_total_seconds = int(prev_row["total_seconds"]) if prev_row else 0
+                    old_total_xp = int(prev_row["xp"]) if prev_row else 0
+
                     # Update aggregates
-                    await conn.execute(
+                    updated_row = await conn.fetchrow(
                         """
                         UPDATE users SET total_seconds = COALESCE(total_seconds,0) + $1, last_seen_at=$2
                         WHERE user_id=$3 AND guild_id=$4
+                        RETURNING total_seconds
                         """,
                         duration,
                         now,
                         user_id,
                         guild_id,
                     )
+                    new_total_seconds = int(updated_row["total_seconds"]) if updated_row else prev_total_seconds + duration
 
+                    # Cumulative XP based on boundary crossings
+                    delta_seconds = max(0, new_total_seconds - prev_total_seconds)
+                    xp_gain = calculate_cumulative_xp_gain(prev_total_seconds, delta_seconds)
+                    if xp_gain > 0:
+                        await conn.execute(
+                            "UPDATE users SET xp = COALESCE(xp,0) + $1 WHERE user_id=$2 AND guild_id=$3",
+                            xp_gain,
+                            user_id,
+                            guild_id,
+                        )
+
+                    # streak
                     streak_day: date = now.date()
                     await conn.execute(
                         """

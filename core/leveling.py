@@ -42,6 +42,29 @@ def calculate_xp_gain(duration_seconds: int) -> int:
     return duration_seconds // seconds_per_xp
 
 
+def _get_seconds_per_xp() -> int:
+    """Read seconds per 1 XP from environment (default: 3600)."""
+    try:
+        seconds_per_xp = int(os.getenv("FOCUS_SECONDS_PER_XP", "3600").strip())
+    except Exception:
+        seconds_per_xp = 3600
+    return max(1, seconds_per_xp)
+
+
+def calculate_cumulative_xp_gain(prev_total_seconds: int, added_seconds: int) -> int:
+    """Return XP gain based on crossing hour boundaries cumulatively.
+
+    Example: prev=3500, added=200 → new=3700 crosses 3600 → gain=1
+    Formula: floor((prev+added)/S) - floor(prev/S)
+    """
+    if added_seconds <= 0:
+        return 0
+    s = _get_seconds_per_xp()
+    before_units = prev_total_seconds // s
+    after_units = (prev_total_seconds + added_seconds) // s
+    gain = after_units - before_units
+    return gain if gain > 0 else 0
+
 def total_xp_required_for_level(level: int) -> int:
     """Total XP required to be AT the given level (1..MAX_LEVEL).
 
