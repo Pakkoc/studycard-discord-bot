@@ -95,15 +95,15 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
               <tr>
-                <th style={th}>{sortHeader("user_id", "User ID", sort, order, q, page)}</th>
-                <th style={th}>{sortHeader("nickname", "Nickname", sort, order, q, page)}</th>
-                <th style={th}>{sortHeader("student_no", "Student No", sort, order, q, page)}</th>
-                <th style={th}>{sortHeader("xp", "XP", sort, order, q, page)}</th>
-                <th style={th}>{sortHeader("total_seconds", "Total(h)", sort, order, q, page)}</th>
-                <th style={th}>{sortHeader("today_seconds", "Today(h)", sort, order, q, page)}</th>
-                <th style={th}>{sortHeader("week_seconds", "Week(h)", sort, order, q, page)}</th>
-                <th style={th}>{sortHeader("month_seconds", "Month(h)", sort, order, q, page)}</th>
-                <th style={th}>{sortHeader("last_seen_at", "Last Seen", sort, order, q, page)}</th>
+                {SortableTh({ keyName: "user_id", label: "User ID", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "nickname", label: "Nickname", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "student_no", label: "Student No", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "xp", label: "XP", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "total_seconds", label: "Total(h)", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "today_seconds", label: "Today(h)", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "week_seconds", label: "Week(h)", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "month_seconds", label: "Month(h)", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "last_seen_at", label: "Last Seen", currentSort: sort, currentOrder: order, q })}
               </tr>
             </thead>
             <tbody>
@@ -154,25 +154,33 @@ function secondsToHours(sec: number) {
   return `${hours}h ${mins}m`;
 }
 
-function sortHeader(
-  key: SortKey,
-  label: string,
-  currentSort: SortKey,
-  currentOrder: SortOrder,
-  q: string,
-  page: number
-) {
-  const isActive = key === currentSort;
-  const nextOrder = isActive && currentOrder === "asc" ? "desc" : "asc";
-  const mk = (ord: "asc" | "desc") => `?q=${encodeURIComponent(q || "")}&page=1&sort=${key}&order=${ord}`;
+type SortableThProps = { keyName: SortKey; label: string; currentSort: SortKey; currentOrder: SortOrder; q: string };
+
+function SortableTh({ keyName, label, currentSort, currentOrder, q }: SortableThProps) {
+  const isActive = keyName === currentSort;
+  const state: "none" | "asc" | "desc" = !isActive ? "none" : currentOrder === "asc" ? "asc" : "desc";
+  const nextOrder: "asc" | "desc" = state === "asc" ? "desc" : "asc"; // none/desc -> asc, asc -> desc
+  const href = `?q=${encodeURIComponent(q || "")}&page=1&sort=${keyName}&order=${nextOrder}`;
+  const ariaSort = state === "none" ? "none" : state === "asc" ? "ascending" : "descending";
+  const ariaLabel = `${label} 정렬: ${nextOrder === "asc" ? "오름차순" : "내림차순"}으로 변경`;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span>{label}</span>
-      <span>
-        <a href={mk("asc")} style={{ textDecoration: "none", color: currentSort === key && currentOrder === "asc" ? "#fbbf24" : "#9ca3af" }}>▲</a>
-        <a href={mk("desc")} style={{ marginLeft: 6, textDecoration: "none", color: currentSort === key && currentOrder === "desc" ? "#fbbf24" : "#9ca3af" }}>▼</a>
-      </span>
-    </div>
+    <th style={th} aria-sort={ariaSort as any}>
+      <a href={href} className={`sort-btn${isActive ? " sort-active" : ""}`} aria-label={ariaLabel}>
+        <span>{label}</span>
+        {SortIcon(state)}
+      </a>
+    </th>
+  );
+}
+
+function SortIcon(state: "none" | "asc" | "desc") {
+  const upOpacity = state === "asc" ? 1 : state === "none" ? 0.6 : 0.35;
+  const downOpacity = state === "desc" ? 1 : state === "none" ? 0.6 : 0.35;
+  return (
+    <svg className="sort-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M6 12l4-4 4 4" style={{ opacity: upOpacity }} />
+      <path d="M6 8l4 4 4-4" style={{ opacity: downOpacity }} />
+    </svg>
   );
 }
 
