@@ -1,5 +1,19 @@
 import { fetchGuildUserStats } from "@/lib/stats";
-import { fetchSummaryToday, fetchDailyTrend, fetchLeaderboard, fetchLevelDistribution, fetchSessionLengthHistogram } from "@/lib/analytics";
+import type { GuildUserRow } from "@/lib/stats";
+import {
+  fetchSummaryToday,
+  fetchDailyTrend,
+  fetchLeaderboard,
+  fetchLevelDistribution,
+  fetchSessionLengthHistogram,
+} from "@/lib/analytics";
+import type {
+  SummaryToday,
+  DailyTrendPoint,
+  LeaderRow,
+  LevelBucket,
+  SessionBucket,
+} from "@/lib/analytics";
 import LineChart from "@/components/LineChart";
 import BarChart from "@/components/BarChart";
 
@@ -11,18 +25,55 @@ export const dynamic = "force-dynamic";
 
 export default async function Page({ searchParams }: { searchParams: SearchParams }) {
   const guildIdFromEnv = process.env.DEFAULT_GUILD_ID || process.env.DEV_GUILD_ID || "";
+  const databaseUrl = process.env.DATABASE_URL || "";
+  if (process.env.NEXT_BUILD_PHASE) {
+    console.log(`[dashboard] NEXT_BUILD_PHASE=${process.env.NEXT_BUILD_PHASE}`);
+  }
+  if (process.env.NEXT_PHASE) {
+    console.log(`[dashboard] NEXT_PHASE=${process.env.NEXT_PHASE}`);
+  }
+  const isBuildPhase = process.env.NEXT_BUILD_PHASE === "1" || process.env.NEXT_PHASE === "phase-production-build";
+  const skipByEnv = process.env.SKIP_DASHBOARD_FETCH === "1";
   const limit = 500;
   const q = searchParams.q || "";
 
+  const hasDb = Boolean(databaseUrl);
   const hasGuild = Boolean(guildIdFromEnv);
   const guildId = hasGuild ? BigInt(guildIdFromEnv) : 0n;
-  const rows = hasGuild ? await fetchGuildUserStats(guildId, limit, q) : [];
-  const summary = hasGuild ? await fetchSummaryToday(guildId) : { todayHours: 0, dau: 0, avgHoursPerActive: 0 };
-  const trend = hasGuild ? await fetchDailyTrend(guildId, 30) : [];
-  const leadersWeek = hasGuild ? await fetchLeaderboard(guildId, "week") : [];
-  const leadersMonth = hasGuild ? await fetchLeaderboard(guildId, "month") : [];
-  const levelDist = hasGuild ? await fetchLevelDistribution(guildId) : [];
-  const sessionHist = hasGuild ? await fetchSessionLengthHistogram(guildId, 30) : [];
+  let errorMessage: string | null = null;
+
+  let rows: GuildUserRow[] = [];
+  let summary: SummaryToday = { todayHours: 0, dau: 0, avgHoursPerActive: 0 };
+  let trend: DailyTrendPoint[] = [];
+  let leadersWeek: LeaderRow[] = [];
+  let leadersMonth: LeaderRow[] = [];
+  let levelDist: LevelBucket[] = [];
+  let sessionHist: SessionBucket[] = [];
+
+  if (!hasDb) {
+    errorMessage = "환경 변수 DATABASE_URL이 설정되지 않아 데이터를 불러올 수 없습니다.";
+  }
+
+  if (!errorMessage && skipByEnv) {
+    errorMessage = "데이터 페치가 비활성화되어 있습니다. 환경 변수 SKIP_DASHBOARD_FETCH=0 으로 변경하세요.";
+  }
+
+  if (!errorMessage && !skipByEnv && !isBuildPhase && hasGuild) {
+    try {
+      [rows, summary, trend, leadersWeek, leadersMonth, levelDist, sessionHist] = await Promise.all([
+        fetchGuildUserStats(guildId, limit, q),
+        fetchSummaryToday(guildId),
+        fetchDailyTrend(guildId, 30),
+        fetchLeaderboard(guildId, "week"),
+        fetchLeaderboard(guildId, "month"),
+        fetchLevelDistribution(guildId),
+        fetchSessionLengthHistogram(guildId, 30),
+      ]);
+    } catch (error) {
+      console.error("Failed to load dashboard data:", error);
+      errorMessage = "데이터를 불러오는 중 오류가 발생했습니다. 환경 변수와 DB 연결을 확인해주세요.";
+    }
+  }
 
   return (
     <main>
@@ -40,7 +91,9 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
         <button type="submit" style={{ padding: "8px 12px" }}>검색</button>
       </form>
 
-      {!hasGuild ? (
+      {errorMessage ? (
+        <div className="panel">{errorMessage}</div>
+      ) : !hasGuild ? (
         <div className="panel">좌측 폼에 Guild ID를 입력하고 조회를 눌러주세요.</div>
       ) : rows.length === 0 ? (
         <div className="panel">데이터가 없습니다.</div>
@@ -79,7 +132,7 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
         </div>
       )}
 
-      {hasGuild && (
+      {hasGuild && !errorMessage && (
         <>
           <div className="cards">
             <div className="card-kpi">
