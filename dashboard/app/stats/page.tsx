@@ -1,19 +1,7 @@
 import LineChart from "@/components/LineChart";
 import BarChart from "@/components/BarChart";
-import {
-  fetchSummaryToday,
-  fetchDailyTrend,
-  fetchLeaderboard,
-  fetchLevelDistribution,
-  fetchSessionLengthHistogram,
-} from "@/lib/analytics";
-import type {
-  SummaryToday,
-  DailyTrendPoint,
-  LeaderRow,
-  LevelBucket,
-  SessionBucket,
-} from "@/lib/analytics";
+import { fetchSummaryToday, fetchDailyTrend, fetchLevelDistribution, fetchSessionLengthHistogram } from "@/lib/analytics";
+import type { SummaryToday, DailyTrendPoint, LevelBucket, SessionBucket } from "@/lib/analytics";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +18,6 @@ export default async function StatsPage() {
 
   let summary: SummaryToday = { todayHours: 0, dau: 0, avgHoursPerActive: 0 };
   let trend: DailyTrendPoint[] = [];
-  let leadersWeek: LeaderRow[] = [];
-  let leadersMonth: LeaderRow[] = [];
   let levelDist: LevelBucket[] = [];
   let sessionHist: SessionBucket[] = [];
 
@@ -44,11 +30,9 @@ export default async function StatsPage() {
 
   if (!errorMessage && !isBuildPhase && hasGuild) {
     try {
-      [summary, trend, leadersWeek, leadersMonth, levelDist, sessionHist] = await Promise.all([
+      [summary, trend, levelDist, sessionHist] = await Promise.all([
         fetchSummaryToday(guildId),
         fetchDailyTrend(guildId, 30),
-        fetchLeaderboard(guildId, "week"),
-        fetchLeaderboard(guildId, "month"),
         fetchLevelDistribution(guildId),
         fetchSessionLengthHistogram(guildId, 30),
       ]);
@@ -97,49 +81,7 @@ export default async function StatsPage() {
             />
           </div>
 
-          <div className="panel" style={{ marginBottom: 16 }}>
-            <div className="title" style={{ marginBottom: 8 }}>리더보드</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <div className="subtle" style={{ marginBottom: 8 }}>이번주 TOP 20</div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={th}>User</th>
-                      <th style={th}>Week(h)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leadersWeek.map((l) => (
-                      <tr key={`w-${l.user_id}`}>
-                        <td style={td}>{l.nickname ?? l.user_id}</td>
-                        <td style={tdMono}>{secondsToHours(l.value_seconds)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div>
-                <div className="subtle" style={{ marginBottom: 8 }}>이번달 TOP 20</div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={th}>User</th>
-                      <th style={th}>Month(h)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leadersMonth.map((l) => (
-                      <tr key={`m-${l.user_id}`}>
-                        <td style={td}>{l.nickname ?? l.user_id}</td>
-                        <td style={tdMono}>{secondsToHours(l.value_seconds)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          {/* 리더보드 섹션은 요구사항에 따라 제거됨 */}
 
           <div className="panel" style={{ marginBottom: 16 }}>
             <div className="title" style={{ marginBottom: 8 }}>분포</div>
