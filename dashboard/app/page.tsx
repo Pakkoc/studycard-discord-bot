@@ -1,24 +1,11 @@
-import { fetchGuildUserStats } from "@/lib/stats";
-import type { GuildUserRow } from "@/lib/stats";
-import {
-  fetchSummaryToday,
-  fetchDailyTrend,
-  fetchLeaderboard,
-  fetchLevelDistribution,
-  fetchSessionLengthHistogram,
-} from "@/lib/analytics";
-import type {
-  SummaryToday,
-  DailyTrendPoint,
-  LeaderRow,
-  LevelBucket,
-  SessionBucket,
-} from "@/lib/analytics";
-import LineChart from "@/components/LineChart";
-import BarChart from "@/components/BarChart";
+import { fetchGuildUserStatsPaged } from "@/lib/stats";
+import type { GuildUserRow, SortKey, SortOrder } from "@/lib/stats";
 
 type SearchParams = {
   q?: string;
+  page?: string;
+  sort?: SortKey;
+  order?: SortOrder;
 };
 
 export const dynamic = "force-dynamic";
@@ -34,8 +21,11 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
   }
   const isBuildPhase = process.env.NEXT_BUILD_PHASE === "1" || process.env.NEXT_PHASE === "phase-production-build";
   const skipByEnv = process.env.SKIP_DASHBOARD_FETCH === "1";
-  const limit = 500;
+  const limit = 20;
   const q = searchParams.q || "";
+  const page = Math.max(Number(searchParams.page ?? 1), 1);
+  const sort = (searchParams.sort as SortKey) || ("xp" as SortKey);
+  const order = (searchParams.order as SortOrder) || ("desc" as SortOrder);
 
   const hasDb = Boolean(databaseUrl);
   const hasGuild = Boolean(guildIdFromEnv);
@@ -43,12 +33,7 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
   let errorMessage: string | null = null;
 
   let rows: GuildUserRow[] = [];
-  let summary: SummaryToday = { todayHours: 0, dau: 0, avgHoursPerActive: 0 };
-  let trend: DailyTrendPoint[] = [];
-  let leadersWeek: LeaderRow[] = [];
-  let leadersMonth: LeaderRow[] = [];
-  let levelDist: LevelBucket[] = [];
-  let sessionHist: SessionBucket[] = [];
+  let total = 0;
 
   if (!hasDb) {
     errorMessage = "환경 변수 DATABASE_URL이 설정되지 않아 데이터를 불러올 수 없습니다.";
@@ -60,17 +45,11 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
 
   if (!errorMessage && !skipByEnv && !isBuildPhase && hasGuild) {
     try {
-      [rows, summary, trend, leadersWeek, leadersMonth, levelDist, sessionHist] = await Promise.all([
-        fetchGuildUserStats(guildId, limit, q),
-        fetchSummaryToday(guildId),
-        fetchDailyTrend(guildId, 30),
-        fetchLeaderboard(guildId, "week"),
-        fetchLeaderboard(guildId, "month"),
-        fetchLevelDistribution(guildId),
-        fetchSessionLengthHistogram(guildId, 30),
-      ]);
+      const res = await fetchGuildUserStatsPaged(guildId, { page, limit, sort, order, query: q });
+      rows = res.rows;
+      total = res.total;
     } catch (error) {
-      console.error("Failed to load dashboard data:", error);
+      console.error("Failed to load users:", error);
       errorMessage = "데이터를 불러오는 중 오류가 발생했습니다. 환경 변수와 DB 연결을 확인해주세요.";
     }
   }
@@ -78,17 +57,31 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
   return (
     <main>
       <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="title">유저 통계 대시보드</div>
+        <div className="title">마법사관학교 학생 목록</div>
       </div>
-      <form method="get" style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-        <input
-          type="text"
-          name="q"
-          placeholder="닉네임 / 학번 / UserID 포함 검색"
-          defaultValue={q}
-          style={{ padding: 8, width: 380 }}
-        />
-        <button type="submit" style={{ padding: "8px 12px" }}>검색</button>
+      <form
+        method="get"
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}
+      >
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <input
+            type="text"
+            name="q"
+            placeholder="닉네임 / 학번 / UserID 포함 검색"
+            defaultValue={q}
+            style={{ padding: 8, width: 380 }}
+          />
+          <input type="hidden" name="page" value="1" />
+          <input type="hidden" name="sort" value={sort} />
+          <input type="hidden" name="order" value={order} />
+          <button type="submit" style={{ padding: "8px 12px" }}>검색</button>
+        </div>
+        <a
+          href="/stats"
+          style={{ padding: "10px 14px", border: "1px solid #1f2937", borderRadius: 8, textDecoration: "none" }}
+        >
+          통계보기
+        </a>
       </form>
 
       {errorMessage ? (
@@ -102,15 +95,15 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
               <tr>
-                <th style={th}>User ID</th>
-                <th style={th}>Nickname</th>
-                <th style={th}>Student No</th>
-                <th style={th}>XP</th>
-                <th style={th}>Total(h)</th>
-                <th style={th}>Today(h)</th>
-                <th style={th}>Week(h)</th>
-                <th style={th}>Month(h)</th>
-                <th style={th}>Last Seen</th>
+                <th style={th}>{sortHeader("user_id", "User ID", sort, order, q, page)}</th>
+                <th style={th}>{sortHeader("nickname", "Nickname", sort, order, q, page)}</th>
+                <th style={th}>{sortHeader("student_no", "Student No", sort, order, q, page)}</th>
+                <th style={th}>{sortHeader("xp", "XP", sort, order, q, page)}</th>
+                <th style={th}>{sortHeader("total_seconds", "Total(h)", sort, order, q, page)}</th>
+                <th style={th}>{sortHeader("today_seconds", "Today(h)", sort, order, q, page)}</th>
+                <th style={th}>{sortHeader("week_seconds", "Week(h)", sort, order, q, page)}</th>
+                <th style={th}>{sortHeader("month_seconds", "Month(h)", sort, order, q, page)}</th>
+                <th style={th}>{sortHeader("last_seen_at", "Last Seen", sort, order, q, page)}</th>
               </tr>
             </thead>
             <tbody>
@@ -129,100 +122,10 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
               ))}
             </tbody>
           </table>
+          <Pagination total={total} page={page} limit={limit} q={q} sort={sort} order={order} />
         </div>
       )}
-
-      {hasGuild && !errorMessage && (
-        <>
-          <div className="cards">
-            <div className="card-kpi">
-              <div className="kpi-label">오늘 총 학습시간</div>
-              <div className="kpi-value">{summary.todayHours.toFixed(2)} h</div>
-            </div>
-            <div className="card-kpi">
-              <div className="kpi-label">DAU</div>
-              <div className="kpi-value">{summary.dau}</div>
-            </div>
-            <div className="card-kpi">
-              <div className="kpi-label">1인당 평균(오늘)</div>
-              <div className="kpi-value">{summary.avgHoursPerActive.toFixed(2)} h</div>
-            </div>
-          </div>
-
-          <div className="panel" style={{ marginBottom: 16 }}>
-            <div className="title" style={{ marginBottom: 8 }}>일간 추이 (총시간/DAU)</div>
-            <LineChart
-              labels={trend.map((t) => t.date.slice(5))}
-              series={[
-                { label: "Hours", data: trend.map((t) => t.hours), color: "#60a5fa" },
-                { label: "DAU", data: trend.map((t) => t.dau), color: "#fca5a5" },
-              ]}
-            />
-          </div>
-
-          <div className="panel" style={{ marginBottom: 16 }}>
-            <div className="title" style={{ marginBottom: 8 }}>리더보드</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <div className="subtle" style={{ marginBottom: 8 }}>이번주 TOP 20</div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={th}>User</th>
-                      <th style={th}>Week(h)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leadersWeek.map((l) => (
-                      <tr key={`w-${l.user_id}`}>
-                        <td style={td}>{l.nickname ?? l.user_id}</td>
-                        <td style={tdMono}>{secondsToHours(l.value_seconds)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div>
-                <div className="subtle" style={{ marginBottom: 8 }}>이번달 TOP 20</div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={th}>User</th>
-                      <th style={th}>Month(h)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leadersMonth.map((l) => (
-                      <tr key={`m-${l.user_id}`}>
-                        <td style={td}>{l.nickname ?? l.user_id}</td>
-                        <td style={tdMono}>{secondsToHours(l.value_seconds)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div className="panel" style={{ marginBottom: 16 }}>
-            <div className="title" style={{ marginBottom: 8 }}>분포</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <div className="subtle" style={{ marginBottom: 8 }}>레벨 분포</div>
-                <BarChart labels={levelDist.map((d) => `L${d.level}`)} data={levelDist.map((d) => d.users)} />
-              </div>
-              <div>
-                <div className="subtle" style={{ marginBottom: 8 }}>세션 길이 히스토그램(최근 30일)</div>
-                <BarChart
-                  labels={sessionHist.map((s) => s.bucket)}
-                  data={sessionHist.map((s) => s.count)}
-                  color="#34d399"
-                />
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      
     </main>
   );
 }
@@ -250,5 +153,62 @@ function secondsToHours(sec: number) {
   const mins = Math.round(((sec || 0) % 3600) / 60);
   return `${hours}h ${mins}m`;
 }
+
+function sortHeader(
+  key: SortKey,
+  label: string,
+  currentSort: SortKey,
+  currentOrder: SortOrder,
+  q: string,
+  page: number
+) {
+  const isActive = key === currentSort;
+  const nextOrder = isActive && currentOrder === "asc" ? "desc" : "asc";
+  const mk = (ord: "asc" | "desc") => `?q=${encodeURIComponent(q || "")}&page=1&sort=${key}&order=${ord}`;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span>{label}</span>
+      <span>
+        <a href={mk("asc")} style={{ textDecoration: "none", color: currentSort === key && currentOrder === "asc" ? "#fbbf24" : "#9ca3af" }}>▲</a>
+        <a href={mk("desc")} style={{ marginLeft: 6, textDecoration: "none", color: currentSort === key && currentOrder === "desc" ? "#fbbf24" : "#9ca3af" }}>▼</a>
+      </span>
+    </div>
+  );
+}
+
+function Pagination({ total, page, limit, q, sort, order }: { total: number; page: number; limit: number; q: string; sort: SortKey; order: SortOrder }) {
+  const pages = Math.max(Math.ceil((total || 0) / limit), 1);
+  const clamp = (n: number) => Math.min(Math.max(n, 1), pages);
+  const mk = (p: number) => `?q=${encodeURIComponent(q || "")}&page=${clamp(p)}&sort=${sort}&order=${order}`;
+  if (pages <= 1) return null;
+  const numbers = Array.from({ length: pages }, (_, i) => i + 1).slice(0, 50);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "center", padding: 16 }}>
+      <a href={mk(page - 1)} style={pageBtn}>{"<"}</a>
+      {numbers.map((n) => (
+        <a key={n} href={mk(n)} style={{ ...pageNum, ...(n === page ? pageNumActive : {}) }}>{n}</a>
+      ))}
+      <a href={mk(page + 1)} style={pageBtn}>{">"}</a>
+    </div>
+  );
+}
+
+const pageBtn: React.CSSProperties = {
+  border: "1px solid #1f2937",
+  padding: "6px 10px",
+  borderRadius: 8,
+  textDecoration: "none",
+  color: "#e5e7eb",
+};
+
+const pageNum: React.CSSProperties = {
+  textDecoration: "none",
+  color: "#e5e7eb",
+};
+
+const pageNumActive: React.CSSProperties = {
+  color: "#f59e0b",
+  fontWeight: 700,
+};
 
 
