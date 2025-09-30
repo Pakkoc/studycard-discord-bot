@@ -41,8 +41,8 @@ button:hover { border-color: var(--accent); }
 .kpi-value { font-size: 22px; font-weight: 700; }
 
 /* table sort icon */
-.sort-btn { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); text-decoration: none; }
-.sort-icon { width: 14px; height: 14px; opacity: 0.9; }
+.sort-btn { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none; }
+.sort-icon { width: 16px; height: 16px; opacity: 0.9; }
 .sort-btn:hover { color: #e5e7eb; }
 .sort-active { color: #ffffff; opacity: 1; }
 

@@ -177,9 +177,9 @@ function SortIcon(state: "none" | "asc" | "desc") {
   const upOpacity = state === "asc" ? 1 : state === "none" ? 0.6 : 0.35;
   const downOpacity = state === "desc" ? 1 : state === "none" ? 0.6 : 0.35;
   return (
-    <svg className="sort-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M6 12l4-4 4 4" style={{ opacity: upOpacity }} />
-      <path d="M6 8l4 4 4-4" style={{ opacity: downOpacity }} />
+    <svg className="sort-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 8l4-4 4 4" style={{ opacity: upOpacity }} />
+      <path d="M6 14l4 4 4-4" style={{ opacity: downOpacity }} />
     </svg>
   );
 }
