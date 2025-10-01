@@ -9,16 +9,43 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 # Simple emoji/symbol replacement map to ensure stable rendering with monochrome glyphs
 # Example: replace color emoji (not reliably supported by Pillow) with safe symbols
 _SYMBOL_REPLACEMENTS: dict[str, str] = {
-    "🔮": "✨",  # crystal ball -> sparkles
+    # Optional single-character replacements before final stripping
+    # (kept for future use; current policy strips all symbols/emojis)
 }
 
 
-def _normalize_symbols(text: str | None) -> str | None:
+def _strip_symbols_emojis(text: str) -> str:
+    """Remove emoji/symbol-like characters to avoid rendering issues.
+
+    Heuristics:
+    - Remove all Unicode category 'S*' (symbols)
+    - Remove common emoji ranges (U+1F000–U+1FAFF, U+2600–U+26FF, U+2700–U+27BF)
+    - Remove variation selectors (U+FE0E/U+FE0F) and ZWJ (U+200D)
+    """
+    out_chars: list[str] = []
+    for ch in text:
+        cp = ord(ch)
+        cat = unicodedata.category(ch)
+        if cat.startswith("S"):
+            continue
+        if 0x1F000 <= cp <= 0x1FAFF:
+            continue
+        if 0x2600 <= cp <= 0x26FF:
+            continue
+        if 0x2700 <= cp <= 0x27BF:
+            continue
+        if cp in (0xFE0E, 0xFE0F, 0x200D):  # VS15/VS16, ZWJ
+            continue
+        out_chars.append(ch)
+    return "".join(out_chars)
+
+
+def _sanitize_text_render(text: str | None) -> str | None:
     if text is None:
         return None
     for src, dst in _SYMBOL_REPLACEMENTS.items():
         text = text.replace(src, dst)
-    return text
+    return _strip_symbols_emojis(text)
 
 
 def seconds_to_hms(seconds: int) -> str:
@@ -187,8 +214,8 @@ def render_profile_card(
     # Right content origin
     right_x = holder_x + holder_size + 32
     # Title: display nickname (fallback: username) with smaller level title on the right
-    # Normalize/replace symbols before rendering
-    t_text = _normalize_symbols(title_text or username) or ""
+    # Sanitize: strip emojis/symbols before rendering
+    t_text = _sanitize_text_render(title_text or username) or ""
     title_y = max(24, holder_y - 20)  # ensure not overlapped vertically
     # Draw title (nickname) with symbol fallback for characters not covered by KR font
     _draw_text_with_symbol_fallback(draw, (right_x, title_y), t_text, title_font, text, 38)
@@ -219,8 +246,8 @@ def render_profile_card(
     current_bottom = name_bottom
     line_gap = 16
     line_height = 28
-    subtitle_line1 = _normalize_symbols(subtitle_line1)
-    subtitle_line2 = _normalize_symbols(subtitle_line2)
+    subtitle_line1 = _sanitize_text_render(subtitle_line1)
+    subtitle_line2 = _sanitize_text_render(subtitle_line2)
     if subtitle_line1:
         line1_y = current_bottom + line_gap
         _draw_text_with_symbol_fallback(draw, (right_x, line1_y), subtitle_line1, body_font, text, 24)
