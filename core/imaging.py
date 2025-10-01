@@ -6,6 +6,20 @@ from typing import Tuple, Optional
 import unicodedata
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
+# Simple emoji/symbol replacement map to ensure stable rendering with monochrome glyphs
+# Example: replace color emoji (not reliably supported by Pillow) with safe symbols
+_SYMBOL_REPLACEMENTS: dict[str, str] = {
+    "🔮": "✨",  # crystal ball -> sparkles
+}
+
+
+def _normalize_symbols(text: str | None) -> str | None:
+    if text is None:
+        return None
+    for src, dst in _SYMBOL_REPLACEMENTS.items():
+        text = text.replace(src, dst)
+    return text
+
 
 def seconds_to_hms(seconds: int) -> str:
     h = seconds // 3600
@@ -173,7 +187,8 @@ def render_profile_card(
     # Right content origin
     right_x = holder_x + holder_size + 32
     # Title: display nickname (fallback: username) with smaller level title on the right
-    t_text = title_text or username
+    # Normalize/replace symbols before rendering
+    t_text = _normalize_symbols(title_text or username) or ""
     title_y = max(24, holder_y - 20)  # ensure not overlapped vertically
     # Draw title (nickname) with symbol fallback for characters not covered by KR font
     _draw_text_with_symbol_fallback(draw, (right_x, title_y), t_text, title_font, text, 38)
@@ -204,6 +219,8 @@ def render_profile_card(
     current_bottom = name_bottom
     line_gap = 16
     line_height = 28
+    subtitle_line1 = _normalize_symbols(subtitle_line1)
+    subtitle_line2 = _normalize_symbols(subtitle_line2)
     if subtitle_line1:
         line1_y = current_bottom + line_gap
         _draw_text_with_symbol_fallback(draw, (right_x, line1_y), subtitle_line1, body_font, text, 24)
