@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 from typing import Tuple, Optional
+import unicodedata
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 
@@ -28,6 +29,9 @@ def _load_fonts(title_size: int, body_size: int) -> Tuple[ImageFont.FreeTypeFont
     candidates = [
         Path("assets/fonts/NotoSansKR-Regular.ttf"),
         Path("assets/fonts/NotoSansKR-Regular.otf"),
+        # Common Linux paths (server) – try CJK first
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf"),
         Path(r"C:/Windows/Fonts/malgun.ttf"),
         Path(r"C:/Windows/Fonts/malgunbd.ttf"),
         Path("arial.ttf"),
@@ -49,6 +53,51 @@ def _load_fonts(title_size: int, body_size: int) -> Tuple[ImageFont.FreeTypeFont
         title_font = ImageFont.load_default()
         body_font = ImageFont.load_default()
     return title_font, body_font
+
+
+def _load_symbol_font(size: int) -> Optional[ImageFont.FreeTypeFont]:
+    """Load a fallback font that covers miscellaneous symbols/emoji (mono)."""
+    symbol_candidates = [
+        Path("assets/fonts/NotoSansSymbols2-Regular.ttf"),
+        Path("assets/fonts/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    ]
+    for p in symbol_candidates:
+        try:
+            return ImageFont.truetype(str(p), size)
+        except Exception:
+            continue
+    return None
+
+
+def _draw_text_with_symbol_fallback(
+    draw: ImageDraw.ImageDraw,
+    xy: Tuple[int, int],
+    text: str,
+    primary_font: ImageFont.FreeTypeFont,
+    fill: Tuple[int, int, int, int],
+    size_for_fallback: int,
+) -> None:
+    """Draw text char-by-char using a symbol-capable fallback font for 'So' category.
+
+    Notes:
+    - This is a pragmatic fallback to render characters like \u2610 (ballot box) that
+      NotoSansKR가 포함하지 않는 경우를 대비합니다.
+    - 컬러 이모지는 Pillow에서 제한적이므로 흑백 글리프 폰트(예: NotoSansSymbols2/DejaVuSans)를 사용합니다.
+    """
+    x, y = xy
+    fallback = _load_symbol_font(size_for_fallback)
+    for ch in text:
+        use_fallback = fallback is not None and unicodedata.category(ch).startswith("S")
+        font = fallback if use_fallback else primary_font
+        # advance width
+        try:
+            w = int(font.getlength(ch))  # Pillow>=8
+        except Exception:
+            w = font.getsize(ch)[0]
+        draw.text((x, y), ch, fill=fill, font=font)
+        x += w
 
 
 # (emoji drawing helpers removed; labels render as plain text)
@@ -126,13 +175,23 @@ def render_profile_card(
     # Title: display nickname (fallback: username) with smaller level title on the right
     t_text = title_text or username
     title_y = max(24, holder_y - 20)  # ensure not overlapped vertically
-    draw.text((right_x, title_y), t_text, fill=text, font=title_font)
+    # Draw title (nickname) with symbol fallback for characters not covered by KR font
+    _draw_text_with_symbol_fallback(draw, (right_x, title_y), t_text, title_font, text, 38)
     try:
         from core.leveling import get_level_title  # late import to avoid cycles
         level_title = get_level_title(level)
     except Exception:
         level_title = f"레벨 {level}"
-    name_w = draw.textlength(t_text, font=title_font)
+    # Compute width considering fallback glyphs
+    try:
+        fb = _load_symbol_font(38)
+        name_w = 0
+        for ch in t_text:
+            use_fb = fb is not None and unicodedata.category(ch).startswith("S")
+            f = fb if use_fb else title_font
+            name_w += int(f.getlength(ch))
+    except Exception:
+        name_w = draw.textlength(t_text, font=title_font)
     # vertically center the smaller text relative to the big title
     name_bbox = draw.textbbox((right_x, title_y), t_text, font=title_font)
     name_bottom = name_bbox[3] if name_bbox else title_y
@@ -147,11 +206,11 @@ def render_profile_card(
     line_height = 28
     if subtitle_line1:
         line1_y = current_bottom + line_gap
-        draw.text((right_x, line1_y), subtitle_line1, fill=text, font=body_font)
+        _draw_text_with_symbol_fallback(draw, (right_x, line1_y), subtitle_line1, body_font, text, 24)
         current_bottom = line1_y + line_height
     if subtitle_line2:
         line2_y = current_bottom + line_gap
-        draw.text((right_x, line2_y), subtitle_line2, fill=text, font=body_font)
+        _draw_text_with_symbol_fallback(draw, (right_x, line2_y), subtitle_line2, body_font, text, 24)
         current_bottom = line2_y + line_height
 
     # Sections
