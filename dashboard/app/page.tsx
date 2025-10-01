@@ -19,7 +19,9 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
   if (process.env.NEXT_PHASE) {
     console.log(`[dashboard] NEXT_PHASE=${process.env.NEXT_PHASE}`);
   }
-  const isBuildPhase = process.env.NEXT_BUILD_PHASE === "1" || process.env.NEXT_PHASE === "phase-production-build";
+  // In development, always allow DB fetch even if NEXT_BUILD_PHASE is set by Next.js
+  const isBuildPhaseEnv = process.env.NEXT_BUILD_PHASE === "1" || process.env.NEXT_PHASE === "phase-production-build";
+  const isBuildPhase = process.env.NODE_ENV !== "development" && isBuildPhaseEnv;
   const skipByEnv = process.env.SKIP_DASHBOARD_FETCH === "1";
   const limit = 20;
   const q = searchParams.q || "";
@@ -98,6 +100,8 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
                 {SortableTh({ keyName: "user_id", label: "User ID", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "nickname", label: "Nickname", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "student_no", label: "Student No", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "status", label: "Status", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "level_name", label: "Level", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "xp", label: "XP", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "total_seconds", label: "Total(h)", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "today_seconds", label: "Today(h)", currentSort: sort, currentOrder: order, q })}
@@ -112,6 +116,8 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
                   <td style={tdMono}>{String(r.user_id)}</td>
                   <td style={td}>{r.nickname ?? ""}</td>
                   <td style={tdMono}>{r.student_no ?? ""}</td>
+                  <td style={td}><StatusBadge status={r.status} /></td>
+                  <td style={td}>{r.level_name ?? ""}</td>
                   <td style={tdMono}>{r.xp}</td>
                   <td style={tdMono}>{secondsToHours(r.total_seconds)}</td>
                   <td style={tdMono}>{secondsToHours(r.today_seconds)}</td>
@@ -200,6 +206,15 @@ function Pagination({ total, page, limit, q, sort, order }: { total: number; pag
     </div>
   );
 }
+function StatusBadge({ status }: { status: "active" | "left" }) {
+  const label = status === "left" ? "Left" : "Active";
+  const color = status === "left" ? "#ef4444" : "#10b981";
+  const bg = status === "left" ? "rgba(239, 68, 68, 0.1)" : "rgba(16, 185, 129, 0.1)";
+  return (
+    <span style={{ padding: "2px 8px", borderRadius: 12, fontSize: 12, color, backgroundColor: bg }}>{label}</span>
+  );
+}
+
 
 const pageBtn: React.CSSProperties = {
   border: "1px solid #1f2937",

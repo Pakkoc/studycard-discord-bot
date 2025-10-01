@@ -26,24 +26,53 @@ REQUIRED_XP_PER_LEVELUP: list[int] = [
 MAX_LEVEL: int = len(LEVEL_TITLES)
 
 
-def calculate_xp_gain(duration_seconds: int) -> int:
-    """Return XP gain for a finished session.
+def _get_xp_per_hour() -> int:
+    """Read XP awarded per hour from environment.
 
-    Policy: 1 XP per full hour of effective focus time.
+    XP_PER_HOUR takes precedence. If not set, falls back to legacy
+    FOCUS_SECONDS_PER_XP semantics (1 XP per N seconds). If neither is set,
+    defaults to 1 XP per hour.
     """
-    if duration_seconds <= 0:
-        return 0
-    # Allow override from environment, default to 3600 seconds per XP
+    try:
+        raw = os.getenv("XP_PER_HOUR", "").strip()
+        if raw:
+            v = int(raw)
+            return max(1, v)
+    except Exception:
+        pass
+    # Fallback to legacy variable: seconds per 1 XP
     try:
         seconds_per_xp = int(os.getenv("FOCUS_SECONDS_PER_XP", "3600").strip())
     except Exception:
         seconds_per_xp = 3600
     seconds_per_xp = max(1, seconds_per_xp)
-    return duration_seconds // seconds_per_xp
+    # Convert to XP per hour: 3600 / seconds_per_xp
+    return max(1, 3600 // seconds_per_xp)
+
+
+def calculate_xp_gain(duration_seconds: int) -> int:
+    """Return XP gain for a finished session using XP_PER_HOUR policy.
+
+    XP is proportional to time: floor(duration_seconds / 3600 * XP_PER_HOUR)
+    """
+    if duration_seconds <= 0:
+        return 0
+    xp_per_hour = _get_xp_per_hour()
+    return (duration_seconds * xp_per_hour) // 3600
 
 
 def _get_seconds_per_xp() -> int:
-    """Read seconds per 1 XP from environment (default: 3600)."""
+    """Internal: derive seconds per 1 XP using XP_PER_HOUR when set.
+
+    If XP_PER_HOUR is provided, seconds_per_xp = 3600 / XP_PER_HOUR (integer, min 1).
+    Else fallback to FOCUS_SECONDS_PER_XP. """
+    try:
+        raw = os.getenv("XP_PER_HOUR", "").strip()
+        if raw:
+            v = max(1, int(raw))
+            return max(1, 3600 // v) if v > 0 else 3600
+    except Exception:
+        pass
     try:
         seconds_per_xp = int(os.getenv("FOCUS_SECONDS_PER_XP", "3600").strip())
     except Exception:

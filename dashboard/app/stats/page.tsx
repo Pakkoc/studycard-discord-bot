@@ -8,7 +8,9 @@ export const dynamic = "force-dynamic";
 export default async function StatsPage() {
   const guildIdFromEnv = process.env.DEFAULT_GUILD_ID || process.env.DEV_GUILD_ID || "";
   const databaseUrl = process.env.DATABASE_URL || "";
-  const isBuildPhase = process.env.NEXT_BUILD_PHASE === "1" || process.env.NEXT_PHASE === "phase-production-build";
+  // In development, ignore build phase flags so server components can fetch data
+  const isBuildPhaseEnv = process.env.NEXT_BUILD_PHASE === "1" || process.env.NEXT_PHASE === "phase-production-build";
+  const isBuildPhase = process.env.NODE_ENV !== "development" && isBuildPhaseEnv;
   const skipByEnv = process.env.SKIP_DASHBOARD_FETCH === "1";
 
   const hasDb = Boolean(databaseUrl);
@@ -44,9 +46,18 @@ export default async function StatsPage() {
 
   return (
     <main>
-      <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="title">통계</div>
-        <div className="subtle">유저 정보 외의 모든 통계가 이 페이지에 모였습니다.</div>
+      <div className="panel" style={{ marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div className="title">통계</div>
+          <div className="subtle">유저 정보 외의 모든 통계가 이 페이지에 모였습니다.</div>
+        </div>
+        <a href="/" aria-label="홈으로" title="홈으로" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, border: "1px solid #1f2937", borderRadius: 8, textDecoration: "none", color: "#e5e7eb" }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20" aria-hidden="true">
+            <path d="M3 9.5l9-7 9 7"/>
+            <path d="M9 22V12h6v10"/>
+            <path d="M21 10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V10"/>
+          </svg>
+        </a>
       </div>
 
       {errorMessage ? (

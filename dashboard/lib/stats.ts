@@ -4,6 +4,8 @@ export type GuildUserRow = {
   user_id: string; // serialized for JSON safety
   nickname: string | null;
   student_no: string | null;
+  status: "active" | "left";
+  level_name: string | null;
   xp: number;
   total_seconds: number;
   today_seconds: number;
@@ -16,6 +18,8 @@ export type SortKey =
   | "user_id"
   | "nickname"
   | "student_no"
+  | "status"
+  | "level_name"
   | "xp"
   | "total_seconds"
   | "today_seconds"
@@ -53,6 +57,8 @@ export async function fetchGuildUserStats(
         u.user_id,
         u.nickname,
         u.student_no,
+        u.status,
+        u.level_name,
         COALESCE(u.xp, 0) AS xp,
         COALESCE(u.total_seconds, 0) AS total_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('day',   now()) THEN vs.duration_seconds END), 0) AS today_seconds,
@@ -66,7 +72,7 @@ export async function fetchGuildUserStats(
        AND vs.ended_at IS NOT NULL
       WHERE u.guild_id = $1
       ${filterSql}
-      GROUP BY u.user_id, u.nickname, u.student_no, u.xp, u.total_seconds, u.last_seen_at
+      GROUP BY u.user_id, u.nickname, u.student_no, u.status, u.level_name, u.xp, u.total_seconds, u.last_seen_at
       ORDER BY xp DESC, total_seconds DESC
       LIMIT $2
     `;
@@ -77,6 +83,8 @@ export async function fetchGuildUserStats(
       user_id: String(r.user_id),
       nickname: r.nickname ?? null,
       student_no: r.student_no ?? null,
+      status: (r.status as string) === "left" ? "left" : "active",
+      level_name: (r.level_name as string | null) ?? null,
       xp: Number(r.xp ?? 0),
       total_seconds: Number(r.total_seconds ?? 0),
       today_seconds: Number(r.today_seconds ?? 0),
@@ -108,6 +116,8 @@ export async function fetchGuildUserStatsPaged(
       user_id: true,
       nickname: true,
       student_no: true,
+      status: true,
+      level_name: true,
       xp: true,
       total_seconds: true,
       today_seconds: true,
@@ -150,6 +160,8 @@ export async function fetchGuildUserStatsPaged(
         u.user_id,
         u.nickname,
         u.student_no,
+        u.status,
+        u.level_name,
         COALESCE(u.xp, 0) AS xp,
         COALESCE(u.total_seconds, 0) AS total_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('day',   now()) THEN vs.duration_seconds END), 0) AS today_seconds,
@@ -163,7 +175,7 @@ export async function fetchGuildUserStatsPaged(
        AND vs.ended_at IS NOT NULL
       WHERE u.guild_id = $1
       ${query.length > 0 ? " AND (u.nickname ILIKE $2 OR u.student_no ILIKE $2 OR CAST(u.user_id AS TEXT) ILIKE $2) " : ""}
-      GROUP BY u.user_id, u.nickname, u.student_no, u.xp, u.total_seconds, u.last_seen_at
+      GROUP BY u.user_id, u.nickname, u.student_no, u.status, u.level_name, u.xp, u.total_seconds, u.last_seen_at
       ORDER BY ${sortKey} ${sortOrder} NULLS LAST
       LIMIT ${query.length > 0 ? "$3" : "$2"}
       OFFSET ${query.length > 0 ? "$4" : "$3"}
@@ -176,6 +188,8 @@ export async function fetchGuildUserStatsPaged(
         user_id: String(r.user_id),
         nickname: r.nickname ?? null,
         student_no: r.student_no ?? null,
+        status: (r.status as string) === "left" ? "left" : "active",
+        level_name: (r.level_name as string | null) ?? null,
         xp: Number(r.xp ?? 0),
         total_seconds: Number(r.total_seconds ?? 0),
         today_seconds: Number(r.today_seconds ?? 0),

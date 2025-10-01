@@ -64,8 +64,8 @@ async def execute_sql_file(path: str) -> None:
 async def ensure_user_exists(conn: asyncpg.Connection, user_id: int, guild_id: int) -> None:
     await conn.execute(
         """
-        INSERT INTO users (user_id, guild_id)
-        VALUES ($1, $2)
+        INSERT INTO users (user_id, guild_id, status)
+        VALUES ($1, $2, 'active')
         ON CONFLICT (user_id, guild_id) DO NOTHING;
         """,
         user_id,
@@ -161,8 +161,8 @@ async def ensure_users_for_guild(guild_id: int, user_ids: list[int]) -> None:
         records = [(uid, guild_id) for uid in user_ids]
         await conn.executemany(
             """
-            INSERT INTO users (user_id, guild_id)
-            VALUES ($1, $2)
+            INSERT INTO users (user_id, guild_id, status)
+            VALUES ($1, $2, 'active')
             ON CONFLICT (user_id, guild_id) DO NOTHING;
             """,
             records,
@@ -294,6 +294,15 @@ async def record_voice_session(
                 streak_day,
             )
 
+            # Persist computed level and level_name for convenience
+            from core.leveling import get_level_title as _ltitle
+            await conn.execute(
+                "UPDATE users SET level=$1, level_name=$2 WHERE user_id=$3 AND guild_id=$4",
+                int(new_level),
+                _ltitle(int(new_level)),
+                user_id,
+                guild_id,
+            )
             return {
                 "xp_gain": int(xp_gain),
                 "total_xp": int(total_xp),
@@ -342,6 +351,15 @@ async def add_xp(user_id: int, guild_id: int, delta_xp: int) -> Dict[str, int]:
             )
             total_xp = int(updated["xp"]) if updated else new_total
             new_level = calculate_level(total_xp)
+            # Persist level and level_name
+            from core.leveling import get_level_title as _ltitle2
+            await conn.execute(
+                "UPDATE users SET level=$1, level_name=$2 WHERE user_id=$3 AND guild_id=$4",
+                int(new_level),
+                _ltitle2(int(new_level)),
+                user_id,
+                guild_id,
+            )
 
             return {
                 "xp_gain": int(delta_xp),
@@ -499,6 +517,23 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
                         await conn.execute(
                             "UPDATE users SET xp = COALESCE(xp,0) + $1 WHERE user_id=$2 AND guild_id=$3",
                             xp_gain,
+                            user_id,
+                            guild_id,
+                        )
+                        # Update level after XP change
+                        row2 = await conn.fetchrow(
+                            "SELECT COALESCE(xp,0) AS xp FROM users WHERE user_id=$1 AND guild_id=$2",
+                            user_id,
+                            guild_id,
+                        )
+                        total_xp2 = int(row2["xp"]) if row2 else 0
+                        from core.leveling import calculate_level as _calc
+                        lvl2 = _calc(total_xp2)
+                        from core.leveling import get_level_title as _ltitle3
+                        await conn.execute(
+                            "UPDATE users SET level=$1, level_name=$2 WHERE user_id=$3 AND guild_id=$4",
+                            int(lvl2),
+                            _ltitle3(int(lvl2)),
                             user_id,
                             guild_id,
                         )

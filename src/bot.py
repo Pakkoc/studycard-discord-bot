@@ -75,6 +75,9 @@ async def main() -> None:
     configure_logging()
     await run_startup_checks()
 
+    # Global message auto-delete delay in seconds (0 disables)
+    message_delete_after_sec = get_env_int("BOT_MESSAGE_DELETE_AFTER_SEC", 0)
+
     intents = discord.Intents.default()
     intents.members = True  # needed for member enumerate and join/remove events
     intents.message_content = False
@@ -186,6 +189,18 @@ async def main() -> None:
         try:
             from core.database import ensure_user, set_user_nickname, set_user_student_no
             await ensure_user(member.id, member.guild.id)
+            # Mark status active on join
+            try:
+                from core.database import get_pool
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE users SET status='active' WHERE user_id=$1 AND guild_id=$2",
+                        member.id,
+                        member.guild.id,
+                    )
+            except Exception:
+                pass
             # Store current nickname/display name into DB
             nickname = member.nick or member.display_name or str(member)
             await set_user_nickname(member.id, member.guild.id, nickname)
@@ -207,11 +222,65 @@ async def main() -> None:
     @bot.event
     async def on_member_remove(member: discord.Member):
         try:
+            # Control whether to reset stats on leave via env (default: 0 => keep data)
+            reset_on_leave = get_env_int("RESET_USER_STATS_ON_LEAVE", 0)
+            if reset_on_leave <= 0:
+                logging.info(
+                    "Member %s left guild %s; keeping stats as configured (RESET_USER_STATS_ON_LEAVE=0)",
+                    member.id,
+                    member.guild.id,
+                )
+                # Mark status left
+                try:
+                    from core.database import get_pool
+                    pool = await get_pool()
+                    async with pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE users SET status='left' WHERE user_id=$1 AND guild_id=$2",
+                            member.id,
+                            member.guild.id,
+                        )
+                except Exception:
+                    pass
+                return
             from core.database import purge_user_non_session_data
             await purge_user_non_session_data(member.id, member.guild.id)
-            logging.info("Purged non-session data for leaving member %s in guild %s", member.id, member.guild.id)
+            logging.info(
+                "Purged non-session data for leaving member %s in guild %s (RESET_USER_STATS_ON_LEAVE=1)",
+                member.id,
+                member.guild.id,
+            )
+            # Also mark status left
+            try:
+                from core.database import get_pool
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE users SET status='left' WHERE user_id=$1 AND guild_id=$2",
+                        member.id,
+                        member.guild.id,
+                    )
+            except Exception:
+                pass
         except Exception as exc:
-            logging.warning("Failed to purge user on remove: %s", exc)
+            logging.warning("Failed to handle member remove: %s", exc)
+
+    @bot.event
+    async def on_member_update(before: discord.Member, after: discord.Member):
+        """Update DB immediately when a member's server nickname changes."""
+        try:
+            # Only proceed if nickname changed
+            if before.nick == after.nick:
+                return
+            from core.database import ensure_user, set_user_nickname
+            await ensure_user(after.id, after.guild.id)
+            nickname = after.nick or after.display_name or str(after)
+            await set_user_nickname(after.id, after.guild.id, nickname)
+            logging.info(
+                "Updated nickname for member %s in guild %s to '%s'", after.id, after.guild.id, nickname
+            )
+        except Exception as exc:
+            logging.warning("Failed to handle nickname update: %s", exc)
 
     # Award XP for posts in specific channels with a simple per-user cooldown
     # Read comma-separated channel IDs from .env POST_XP_CHANNEL_IDS
@@ -249,7 +318,8 @@ async def main() -> None:
                 channel = pick_levelup_channel(message.guild)
                 if channel:
                     await channel.send(
-                        f"🎉 <@{message.author.id}> 레벨업! 새 레벨: {result['new_level']} (누적 XP: {result['total_xp']})"
+                        f"🎉 <@{message.author.id}> 레벨업! 새 레벨: {result['new_level']} (누적 XP: {result['total_xp']})",
+                        delete_after=message_delete_after_sec if message_delete_after_sec > 0 else None,
                     )
         except Exception as exc:
             logging.warning("Failed to add post XP: %s", exc)
@@ -364,7 +434,8 @@ async def main() -> None:
                             channel = pick_levelup_channel(member.guild)
                             if channel:
                                 await channel.send(
-                                    f"🎉 <@{member.id}> 레벨업! 새 레벨: {result['new_level']} (누적 XP: {result['total_xp']})"
+                                    f"🎉 <@{member.id}> 레벨업! 새 레벨: {result['new_level']} (누적 XP: {result['total_xp']})",
+                                    delete_after=message_delete_after_sec if message_delete_after_sec > 0 else None,
                                 )
                         except Exception as send_exc:
                             logging.warning("Failed to send level-up message: %s", send_exc)

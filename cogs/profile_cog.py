@@ -200,7 +200,13 @@ class ProfileCog(commands.Cog):
         combined = compose_vertical_images(top_img, bottom_img)
 
         file = discord.File(combined, filename="profile.png")
-        await interaction.response.send_message(file=file)
+        # Auto-delete after configured seconds (0 disables)
+        try:
+            delete_after_raw = os.getenv("BOT_MESSAGE_DELETE_AFTER_SEC", "0").strip()
+            delete_after = int(delete_after_raw) if delete_after_raw.isdigit() else 0
+        except Exception:
+            delete_after = 0
+        await interaction.response.send_message(file=file, delete_after=delete_after if delete_after > 0 else None)
 
 
 async def setup(bot: commands.Bot) -> None:

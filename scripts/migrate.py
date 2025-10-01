@@ -21,6 +21,11 @@ async def main() -> None:
 		repo_root / "assets" / "db" / "migrations" / "migration_004_add_users_nickname.sql",
 		repo_root / "assets" / "db" / "migrations" / "migration_005_add_users_student_no.sql",
 		repo_root / "assets" / "db" / "migrations" / "migration_006_enable_rls.sql",
+		repo_root / "assets" / "db" / "migrations" / "migration_007_enable_rls_read_policies.sql",
+		repo_root / "assets" / "db" / "migrations" / "migration_008_drop_channels.sql",
+		repo_root / "assets" / "db" / "migrations" / "migration_009_add_users_status.sql",
+		repo_root / "assets" / "db" / "migrations" / "migration_010_add_users_level.sql",
+		repo_root / "assets" / "db" / "migrations" / "migration_011_add_users_level_name.sql",
 	]
 	for m in migrations:
 		await execute_sql_file(str(m))

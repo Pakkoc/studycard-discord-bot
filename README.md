@@ -78,7 +78,10 @@ HOUSE_LEADER_ROLE_NAMES=기숙사장
 # 음성 세션 최소 인정 시간(초)
 VOICE_MIN_SESSION_SEC=180
 
-# 포커스 시간(초) 당 1XP 부여 기준값 (기본 3600)
+# 시간당 XP 부여량 (신규) — 예: 1시간에 3XP 지급
+XP_PER_HOUR=3
+
+# (레거시) 포커스 시간(초) 당 1XP 기준값 — XP_PER_HOUR 미설정 시 사용
 FOCUS_SECONDS_PER_XP=3600
 ```
 
