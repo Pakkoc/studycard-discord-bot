@@ -58,8 +58,7 @@ DEV_GUILD_ID=<GUILD_ID>
 
 # 선택: 레벨업 축하 메시지를 보낼 채널 지정 (전역)
 LEVELUP_CHANNEL_ID=<CHANNEL_ID>
-# 선택: 길드별로 채널 지정 (환경변수 키에 길드 ID 포함)
-LEVELUP_CHANNEL_ID_<GUILD_ID>=<CHANNEL_ID>
+# 참고: 길드별 변수 LEVELUP_CHANNEL_ID_<GUILD_ID>는 더 이상 사용하지 않습니다.
 ```
 
 #### 권한 관련 설정

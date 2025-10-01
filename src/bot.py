@@ -46,24 +46,22 @@ def pick_levelup_channel(guild: discord.Guild) -> Optional[discord.TextChannel]:
     """Choose channel to send level-up messages.
 
     Priority:
-    1) .env LEVELUP_CHANNEL_ID_{GUILD_ID}
-    2) .env LEVELUP_CHANNEL_ID
-    3) guild.system_channel
-    4) first text channel bot can send to
+    1) .env LEVELUP_CHANNEL_ID
+    2) guild.system_channel
+    3) first text channel bot can send to
     """
-    # 1) Per-guild override
-    env_key = f"LEVELUP_CHANNEL_ID_{guild.id}"
-    chan_id = os.getenv(env_key) or os.getenv("LEVELUP_CHANNEL_ID")
+    # 1) Global override via env
+    chan_id = os.getenv("LEVELUP_CHANNEL_ID")
     if chan_id and chan_id.isdigit():
         ch = guild.get_channel(int(chan_id))
         if ch and isinstance(ch, discord.TextChannel) and ch.permissions_for(guild.me).send_messages:
             return ch
 
-    # 3) system channel
+    # 2) system channel
     if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
         return guild.system_channel
 
-    # 4) any sendable text channel
+    # 3) any sendable text channel
     for ch in guild.text_channels:
         if ch.permissions_for(guild.me).send_messages:
             return ch
