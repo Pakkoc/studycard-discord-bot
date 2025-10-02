@@ -319,6 +319,8 @@ async def main() -> None:
                         f"🎉 <@{message.author.id}> 레벨업! 새 레벨: {result['new_level']} (누적 XP: {result['total_xp']})",
                         delete_after=message_delete_after_sec if message_delete_after_sec > 0 else None,
                     )
+                else:
+                    logging.warning("No available channel to send level-up message in guild %s", message.guild.id)
         except Exception as exc:
             logging.warning("Failed to add post XP: %s", exc)
 
@@ -435,6 +437,8 @@ async def main() -> None:
                                     f"🎉 <@{member.id}> 레벨업! 새 레벨: {result['new_level']} (누적 XP: {result['total_xp']})",
                                     delete_after=message_delete_after_sec if message_delete_after_sec > 0 else None,
                                 )
+                            else:
+                                logging.warning("No available channel to send level-up message in guild %s", member.guild.id)
                         except Exception as send_exc:
                             logging.warning("Failed to send level-up message: %s", send_exc)
                 except Exception as exc:

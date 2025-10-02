@@ -227,7 +227,7 @@ async def record_voice_session(
             )
 
             # Fetch previous aggregates for cumulative-based XP calculation
-            from core.leveling import calculate_xp_gain, calculate_level
+            from core.leveling import calculate_level, calculate_cumulative_xp_gain
 
             prev_row = await conn.fetchrow(
                 """
@@ -260,9 +260,9 @@ async def record_voice_session(
             )
             new_total_seconds = int(new_total_seconds_row["total_seconds"]) if new_total_seconds_row else prev_total_seconds + duration_seconds
 
-            # Cumulative-based XP: compute delta seconds and convert to XP units
+            # Cumulative-based XP: compute increments across boundary crossings using previous total
             delta_seconds = max(0, new_total_seconds - prev_total_seconds)
-            xp_gain = calculate_xp_gain(delta_seconds)
+            xp_gain = calculate_cumulative_xp_gain(prev_total_seconds, delta_seconds)
 
             if xp_gain > 0:
                 updated_xp_row = await conn.fetchrow(
