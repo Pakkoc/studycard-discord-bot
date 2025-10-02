@@ -363,7 +363,7 @@ async def main() -> None:
                         lvl = int(result.get("new_level", 0))
                         title = f"L{lvl}"
                     await channel.send(
-                        f"🎉 <@{message.author.id}> 레벨업! 새 레벨: {title} (L{lvl}, 누적 XP: {result['total_xp']})",
+                        f"🎉 <@{message.author.id}> 레벨업! 새 레벨: {title} (누적 XP: {result['total_xp']})",
                     )
                 else:
                     logging.warning("No available channel to send level-up message in guild %s", message.guild.id)
@@ -487,7 +487,7 @@ async def main() -> None:
                                     lvl = int(result.get("new_level", 0))
                                     title = f"L{lvl}"
                                 await channel.send(
-                                    f"🎉 <@{member.id}> 레벨업! 새 레벨: {title} (L{lvl}, 누적 XP: {result['total_xp']})",
+                                    f"🎉 <@{member.id}> 레벨업! 새 레벨: {title} (누적 XP: {result['total_xp']})",
                                 )
                             else:
                                 logging.warning("No available channel to send level-up message in guild %s", member.guild.id)
