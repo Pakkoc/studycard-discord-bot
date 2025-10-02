@@ -203,10 +203,10 @@ async def record_voice_session(
     started_at: datetime,
     ended_at: datetime,
     duration_seconds: int,
-) -> Dict[str, int]:
+) -> Dict[str, int | str]:
     """Insert a finished voice session and update aggregates in a transaction.
 
-    Returns a dict with keys: xp_gain, total_xp, old_level, new_level
+    Returns a dict with keys: xp_gain, total_xp, old_level, new_level, level_name
     """
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -296,10 +296,11 @@ async def record_voice_session(
 
             # Persist computed level and level_name for convenience
             from core.leveling import get_level_title as _ltitle
+            level_name = _ltitle(int(new_level))
             await conn.execute(
                 "UPDATE users SET level=$1, level_name=$2 WHERE user_id=$3 AND guild_id=$4",
                 int(new_level),
-                _ltitle(int(new_level)),
+                level_name,
                 user_id,
                 guild_id,
             )
@@ -308,16 +309,17 @@ async def record_voice_session(
                 "total_xp": int(total_xp),
                 "old_level": int(old_level),
                 "new_level": int(new_level),
+                "level_name": level_name,
             }
 
 
-async def add_xp(user_id: int, guild_id: int, delta_xp: int) -> Dict[str, int]:
+async def add_xp(user_id: int, guild_id: int, delta_xp: int) -> Dict[str, int | str]:
     """Atomically add XP to a user and return level transition info.
 
-    Returns dict keys: xp_gain, total_xp, old_level, new_level
+    Returns dict keys: xp_gain, total_xp, old_level, new_level, level_name
     """
     if delta_xp == 0:
-        return {"xp_gain": 0, "total_xp": 0, "old_level": 0, "new_level": 0}
+        return {"xp_gain": 0, "total_xp": 0, "old_level": 0, "new_level": 0, "level_name": ""}
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -353,10 +355,11 @@ async def add_xp(user_id: int, guild_id: int, delta_xp: int) -> Dict[str, int]:
             new_level = calculate_level(total_xp)
             # Persist level and level_name
             from core.leveling import get_level_title as _ltitle2
+            level_name = _ltitle2(int(new_level))
             await conn.execute(
                 "UPDATE users SET level=$1, level_name=$2 WHERE user_id=$3 AND guild_id=$4",
                 int(new_level),
-                _ltitle2(int(new_level)),
+                level_name,
                 user_id,
                 guild_id,
             )
@@ -366,6 +369,7 @@ async def add_xp(user_id: int, guild_id: int, delta_xp: int) -> Dict[str, int]:
                 "total_xp": int(total_xp),
                 "old_level": int(old_level),
                 "new_level": int(new_level),
+                "level_name": level_name,
             }
 
 async def fetch_user_stats(user_id: int, guild_id: int) -> Optional[Dict[str, int]]:

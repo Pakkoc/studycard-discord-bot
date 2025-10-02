@@ -83,6 +83,24 @@ async def main() -> None:
 
     bot = commands.Bot(command_prefix="!", intents=intents)
 
+    def resolve_level_info(payload: dict) -> tuple[int, str]:
+        """Return normalized level number and title for level-up messages."""
+        raw_level = payload.get("new_level", 0)
+        try:
+            level = int(raw_level)
+        except (TypeError, ValueError):
+            level = 0
+        level = max(1, level)
+        raw_title = payload.get("level_name")
+        title = raw_title.strip() if isinstance(raw_title, str) else ""
+        if title:
+            return level, title
+        try:
+            from core.leveling import get_level_title as _ltitle
+            return level, _ltitle(level)
+        except Exception:
+            return level, f"레벨 {level}"
+
     @bot.event
     async def on_ready():
         logging.info("Logged in as %s (ID: %s)", bot.user, bot.user.id)
@@ -355,13 +373,7 @@ async def main() -> None:
             if result and result.get("new_level", 0) > result.get("old_level", 0):
                 channel = pick_levelup_channel(message.guild)
                 if channel:
-                    try:
-                        from core.leveling import get_level_title as _ltitle
-                        lvl = int(result.get("new_level", 0))
-                        title = _ltitle(lvl)
-                    except Exception:
-                        lvl = int(result.get("new_level", 0))
-                        title = f"L{lvl}"
+                    _, title = resolve_level_info(result)
                     await channel.send(
                         f"🎉 <@{message.author.id}> 레벨업! 새 레벨: {title} (누적 XP: {result['total_xp']})",
                     )
@@ -479,13 +491,7 @@ async def main() -> None:
                         try:
                             channel = pick_levelup_channel(member.guild)
                             if channel:
-                                try:
-                                    from core.leveling import get_level_title as _ltitle2
-                                    lvl = int(result.get("new_level", 0))
-                                    title = _ltitle2(lvl)
-                                except Exception:
-                                    lvl = int(result.get("new_level", 0))
-                                    title = f"L{lvl}"
+                                _, title = resolve_level_info(result)
                                 await channel.send(
                                     f"🎉 <@{member.id}> 레벨업! 새 레벨: {title} (누적 XP: {result['total_xp']})",
                                 )
