@@ -98,6 +98,46 @@ async def main() -> None:
             except Exception as finalize_exc:
                 logging.warning("Finalize open sessions failed: %s", finalize_exc)
 
+            # Snapshot currently connected voice members and start fresh sessions immediately
+            try:
+                now = datetime.now(timezone.utc)
+                started = 0
+                for g in bot.guilds:
+                    try:
+                        channels = []
+                        try:
+                            channels.extend(getattr(g, "voice_channels", []) or [])
+                        except Exception:
+                            pass
+                        try:
+                            channels.extend(getattr(g, "stage_channels", []) or [])
+                        except Exception:
+                            pass
+                        for ch in channels:
+                            for m in getattr(ch, "members", []) or []:
+                                if getattr(m, "bot", False):
+                                    continue
+                                key = (g.id, m.id)
+                                # avoid duplicate if somehow present
+                                if key in active_sessions:
+                                    continue
+                                # ensure user exists and nickname stored
+                                try:
+                                    from core.database import ensure_user, set_user_nickname
+                                    await ensure_user(m.id, g.id)
+                                    nickname = m.nick or m.display_name or str(m)
+                                    await set_user_nickname(m.id, g.id, nickname)
+                                except Exception:
+                                    pass
+                                active_sessions[key] = now
+                                started += 1
+                    except Exception as gexc:
+                        logging.warning("Snapshot voice members failed for guild %s: %s", getattr(g, "id", "?"), gexc)
+                if started:
+                    logging.info("Started %s resumed voice sessions after restart snapshot", started)
+            except Exception as snap_exc:
+                logging.warning("Snapshot of active voice members failed: %s", snap_exc)
+
             dev_guild_id = os.getenv("DEV_GUILD_ID")
             if dev_guild_id and dev_guild_id.isdigit():
                 guild = discord.Object(id=int(dev_guild_id))
