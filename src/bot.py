@@ -315,9 +315,15 @@ async def main() -> None:
             if result and result.get("new_level", 0) > result.get("old_level", 0):
                 channel = pick_levelup_channel(message.guild)
                 if channel:
+                    try:
+                        from core.leveling import get_level_title as _ltitle
+                        lvl = int(result.get("new_level", 0))
+                        title = _ltitle(lvl)
+                    except Exception:
+                        lvl = int(result.get("new_level", 0))
+                        title = f"L{lvl}"
                     await channel.send(
-                        f"🎉 <@{message.author.id}> 레벨업! 새 레벨: {result['new_level']} (누적 XP: {result['total_xp']})",
-                        delete_after=message_delete_after_sec if message_delete_after_sec > 0 else None,
+                        f"🎉 <@{message.author.id}> 레벨업! 새 레벨: {title} (L{lvl}, 누적 XP: {result['total_xp']})",
                     )
                 else:
                     logging.warning("No available channel to send level-up message in guild %s", message.guild.id)
@@ -433,9 +439,15 @@ async def main() -> None:
                         try:
                             channel = pick_levelup_channel(member.guild)
                             if channel:
+                                try:
+                                    from core.leveling import get_level_title as _ltitle2
+                                    lvl = int(result.get("new_level", 0))
+                                    title = _ltitle2(lvl)
+                                except Exception:
+                                    lvl = int(result.get("new_level", 0))
+                                    title = f"L{lvl}"
                                 await channel.send(
-                                    f"🎉 <@{member.id}> 레벨업! 새 레벨: {result['new_level']} (누적 XP: {result['total_xp']})",
-                                    delete_after=message_delete_after_sec if message_delete_after_sec > 0 else None,
+                                    f"🎉 <@{member.id}> 레벨업! 새 레벨: {title} (L{lvl}, 누적 XP: {result['total_xp']})",
                                 )
                             else:
                                 logging.warning("No available channel to send level-up message in guild %s", member.guild.id)
