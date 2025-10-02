@@ -16,3 +16,14 @@ stdout
 locales/
 .vooster/
 
+
+
+# START Ruler Generated Files
+/.aider.conf.yml
+/.cursor/rules/ruler_cursor_instructions.mdc
+/.goosehints
+/AGENTS.md
+/AGENTS.md.bak
+/firebender.json
+/opencode.json
+# END Ruler Generated Files

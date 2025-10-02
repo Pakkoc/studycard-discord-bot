@@ -128,23 +128,6 @@ python scripts/migrate.py
 python src/bot.py
 ```
 
-### 6) 폰트 준비(서버에서 한글 깨짐 방지)
-이미지 생성은 한글 폰트가 필요합니다. 아래 둘 중 하나로 준비하세요.
-
-방법 A: 프로젝트에 폰트 포함(권장)
-```bash
-mkdir -p assets/fonts
-curl -fL -o assets/fonts/NotoSansKR-Regular.ttf \
-  https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR-Regular.ttf
-```
-
-방법 B: 서버에 시스템 폰트 설치 후 연결
-```bash
-sudo apt update && sudo apt install -y fonts-noto-cjk
-ln -sf /usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc assets/fonts/NotoSansKR-Regular.ttf || true
-```
-`core/imaging.py`는 `assets/fonts/NotoSansKR-Regular.ttf/otf` → Windows `malgun.ttf` → Arial → PIL 기본 폰트 순으로 탐색합니다.
-
 ## 🧭 명령어
 - `/profile [@사용자]`: 프로필 카드 생성 및 전송
   - 일반 사용자: 매개변수 없이 실행 → 본인 프로필만 조회 가능
@@ -236,7 +219,6 @@ profile_bot/
 - Slash 명령어가 안 보임: `.env`의 `DEV_GUILD_ID`가 설정되어 있으면 해당 길드에만 즉시 동기화됩니다. ID가 다르면 보이지 않습니다. 제거하거나 올바른 ID로 재시작하세요.
 - 디스코드에 ‘앱’만 보이고 ‘봇’이 없음: 초대 URL을 OAuth2 → URL Generator에서 `bot` + `applications.commands` Scopes로 다시 생성해 초대하세요.
 - 대시보드가 500 에러/데이터 없음: Vercel Functions 로그에서 `self-signed certificate in certificate chain`이면 `NODE_TLS_REJECT_UNAUTHORIZED=0`(또는 `PGSSLMODE=no-verify`) 추가 후 재배포. DB는 반드시 Pooler(6543)로 연결.
-- 프로필 이미지 한글 깨짐/폰트 달라짐: `assets/fonts/NotoSansKR-Regular.ttf`를 배치하거나 `fonts-noto-cjk` 설치.
 - 봇이 오프라인: 토큰이 다른 애플리케이션 것일 수 있습니다. 로그의 `Logged in as ... (ID: ...)`가 Dev Portal Bot ID와 일치하는지 확인하고 `.env`의 `DISCORD_BOT_TOKEN`을 교체 후 재시작.
 
 ## 🔒 보안 주의
