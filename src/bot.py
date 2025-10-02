@@ -73,15 +73,14 @@ async def main() -> None:
     configure_logging()
     await run_startup_checks()
 
-    # Global message auto-delete delay in seconds (0 disables)
-    message_delete_after_sec = get_env_int("BOT_MESSAGE_DELETE_AFTER_SEC", 0)
-
     intents = discord.Intents.default()
     intents.members = True  # needed for member enumerate and join/remove events
     intents.message_content = False
     intents.voice_states = True
 
     bot = commands.Bot(command_prefix="!", intents=intents)
+
+    levelup_delete_after_sec = get_env_int("LEVELUP_MESSAGE_DELETE_AFTER_SEC", 0)
 
     def resolve_level_info(payload: dict) -> tuple[int, str]:
         """Return normalized level number and title for level-up messages."""
@@ -100,6 +99,13 @@ async def main() -> None:
             return level, _ltitle(level)
         except Exception:
             return level, f"레벨 {level}"
+
+    async def send_levelup_message(channel: discord.abc.Messageable, content: str) -> None:
+        """Send level-up message while honoring optional retention override."""
+        kwargs: dict[str, object] = {}
+        if levelup_delete_after_sec > 0:
+            kwargs["delete_after"] = levelup_delete_after_sec
+        await channel.send(content, **kwargs)
 
     @bot.event
     async def on_ready():
@@ -374,7 +380,8 @@ async def main() -> None:
                 channel = pick_levelup_channel(message.guild)
                 if channel:
                     _, title = resolve_level_info(result)
-                    await channel.send(
+                    await send_levelup_message(
+                        channel,
                         f"🎉 <@{message.author.id}> 레벨업! 새 레벨: {title} (누적 XP: {result['total_xp']})",
                     )
                 else:
@@ -492,7 +499,8 @@ async def main() -> None:
                             channel = pick_levelup_channel(member.guild)
                             if channel:
                                 _, title = resolve_level_info(result)
-                                await channel.send(
+                                await send_levelup_message(
+                                    channel,
                                     f"🎉 <@{member.id}> 레벨업! 새 레벨: {title} (누적 XP: {result['total_xp']})",
                                 )
                             else:

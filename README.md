@@ -60,6 +60,8 @@ DEV_GUILD_ID=<GUILD_ID>
 
 # 선택: 레벨업 축하 메시지를 보낼 채널 지정 (전역)
 LEVELUP_CHANNEL_ID=<CHANNEL_ID>
+# 선택: 레벨업 축하 메시지 삭제 지연 (초, 0이면 유지)
+LEVELUP_MESSAGE_DELETE_AFTER_SEC=0
 # 참고: 길드별 변수 LEVELUP_CHANNEL_ID_<GUILD_ID>는 더 이상 사용하지 않습니다.
 ```
 
