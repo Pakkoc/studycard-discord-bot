@@ -192,17 +192,45 @@ function SortIcon(state: "none" | "asc" | "desc") {
 
 function Pagination({ total, page, limit, q, sort, order }: { total: number; page: number; limit: number; q: string; sort: SortKey; order: SortOrder }) {
   const pages = Math.max(Math.ceil((total || 0) / limit), 1);
+  if (pages <= 1) return null;
+
   const clamp = (n: number) => Math.min(Math.max(n, 1), pages);
   const mk = (p: number) => `?q=${encodeURIComponent(q || "")}&page=${clamp(p)}&sort=${sort}&order=${order}`;
-  if (pages <= 1) return null;
-  const numbers = Array.from({ length: pages }, (_, i) => i + 1).slice(0, 50);
+
+  // 10개 단위 그룹 계산
+  const groupSize = 10;
+  const currentGroup = Math.ceil(page / groupSize); // 1-base
+  const lastGroup = Math.ceil(pages / groupSize);
+  const groupStart = (currentGroup - 1) * groupSize + 1;
+  const groupEnd = Math.min(groupStart + groupSize - 1, pages);
+
+  const pageNumbers = [] as number[];
+  for (let n = groupStart; n <= groupEnd; n++) pageNumbers.push(n);
+
+  const hasPrevGroup = currentGroup > 1;
+  const hasNextGroup = currentGroup < lastGroup;
+  const prevGroupPage = groupStart - groupSize; // 그룹의 첫 페이지에서 10페이지 이전으로
+  const nextGroupPage = groupStart + groupSize; // 다음 그룹의 첫 페이지
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "center", padding: 16 }}>
-      <a href={mk(page - 1)} style={pageBtn}>{"<"}</a>
-      {numbers.map((n) => (
+      {/* 첫 그룹이 아니면 '<' 버튼 노출 (10페이지 단위 이동) */}
+      {hasPrevGroup ? (
+        <a href={mk(prevGroupPage)} style={pageBtn}>{"<"}</a>
+      ) : (
+        <span style={{ ...pageBtn, opacity: 0.35, pointerEvents: "none" }}>{"<"}</span>
+      )}
+
+      {pageNumbers.map((n) => (
         <a key={n} href={mk(n)} style={{ ...pageNum, ...(n === page ? pageNumActive : {}) }}>{n}</a>
       ))}
-      <a href={mk(page + 1)} style={pageBtn}>{">"}</a>
+
+      {/* 마지막 그룹이 아니면 '>' 버튼 노출 (10페이지 단위 이동) */}
+      {hasNextGroup ? (
+        <a href={mk(nextGroupPage)} style={pageBtn}>{">"}</a>
+      ) : (
+        <span style={{ ...pageBtn, opacity: 0.35, pointerEvents: "none" }}>{">"}</span>
+      )}
     </div>
   );
 }
