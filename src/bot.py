@@ -501,7 +501,7 @@ async def main() -> None:
                                 _, title = resolve_level_info(result)
                                 await send_levelup_message(
                                     channel,
-                                    f"🦉 {member.mention} 님이 {title}로 전직하셨습니다! `{result['total_xp']}XP`",
+                                    f"🦉 {member.mention} 님이 **{title}**로 전직하셨습니다! `{result['total_xp']}XP`",
                                 )
                             else:
                                 logging.warning("No available channel to send level-up message in guild %s", member.guild.id)
