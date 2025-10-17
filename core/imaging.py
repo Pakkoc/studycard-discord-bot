@@ -351,6 +351,8 @@ def render_profile_card(
     t_w = draw.textlength(prog_text, font=xp_font_small)
     draw.text((bar_x + bar_w - t_w, bar_y + bar_h + under_gap), prog_text, fill=text, font=xp_font_small)
 
+    # (moved watermark to stats panel for visual balance)
+
     buf = BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
@@ -518,6 +520,44 @@ def render_stats_and_month_calendar(
             cx = x0 + cell_w / 2
             cy = y0 + cell_h / 2
             draw.text((cx, cy), str(day), fill=text, font=body_font, anchor="mm")
+
+    # Watermark inside the dashed box area (right column bottom rectangle)
+    try:
+        candidates = [
+            Path("image/impress.png"),
+            Path("assets/@impress.png"),
+            Path("assets/impress.png"),
+            Path("assets/images/@impress.png"),
+            Path("assets/images/impress.png"),
+        ]
+        wm_path = next((p for p in candidates if p.exists()), None)
+        if wm_path is not None:
+            wm = Image.open(wm_path).convert("RGBA")
+            # Define target box: within right column, below stats lines and above bottom
+            inner_margin = 12
+            area_left = right_origin + inner_margin
+            area_right = width - pad - inner_margin
+            # 'y' holds the last used Y for stats rows (after loop above)
+            stats_bottom = y
+            area_top = stats_bottom + 16
+            area_bottom = height - pad - inner_margin
+            area_w = max(1, area_right - area_left)
+            area_h = max(1, area_bottom - area_top)
+
+            # Scale watermark to fit inside area with a small padding factor
+            scale_w = area_w / float(wm.width)
+            scale_h = area_h / float(wm.height)
+            scale = min(scale_w, scale_h, 1.0) * 0.96
+            if scale < 1.0:
+                new_w = max(1, int(wm.width * scale))
+                new_h = max(1, int(wm.height * scale))
+                wm = wm.resize((new_w, new_h), Image.LANCZOS)
+            # Center inside the target area
+            pos_x = area_left + (area_w - wm.width) // 2
+            pos_y = area_top + (area_h - wm.height) // 2
+            canvas.alpha_composite(wm, (pos_x, pos_y))
+    except Exception:
+        pass
 
     out = BytesIO()
     canvas.save(out, format="PNG")
