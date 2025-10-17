@@ -14,6 +14,79 @@ _SYMBOL_REPLACEMENTS: dict[str, str] = {
 }
 
 
+def _hex_to_rgb(value: str) -> tuple[int, int, int]:
+    h = value.strip().lstrip("#")
+    if len(h) != 6:
+        raise ValueError(f"Invalid hex color: {value}")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _mix_rgb(color: tuple[int, int, int], target: tuple[int, int, int], ratio: float) -> tuple[int, int, int]:
+    ratio = max(0.0, min(1.0, ratio))
+    return tuple(int(c * (1.0 - ratio) + t * ratio) for c, t in zip(color, target))
+
+
+def _relative_luminance(color: tuple[int, int, int]) -> float:
+    def channel(v: int) -> float:
+        x = v / 255.0
+        return x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (channel(v) for v in color)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+_HOUSE_THEME_BASES: dict[str, str] = {
+    "소용돌이": "#FBE3ED",
+    "노블레빗": "#E8DDFF",
+    "볼리베어": "#D2E7FE",
+    "팽도리아": "#D7D9E2",
+    "펭도리야": "#D7D9E2",
+}
+
+
+_DEFAULT_THEME: dict[str, tuple[int, int, int, int]] = {
+    "background": (222, 210, 255, 255),
+    "card": (201, 182, 255, 255),
+    "outline": (131, 96, 195, 255),
+    "primary": (131, 96, 195, 255),
+    "text": (54, 38, 100, 255),
+    "bar_bg": (232, 224, 214, 255),
+    "accent": (231, 185, 96, 255),
+}
+
+
+def _resolve_house_theme(house_name: str | None) -> dict[str, tuple[int, int, int, int]]:
+    if not house_name:
+        return _DEFAULT_THEME
+    key = house_name.strip()
+    if not key:
+        return _DEFAULT_THEME
+    base_hex = _HOUSE_THEME_BASES.get(key.lower()) or _HOUSE_THEME_BASES.get(key)
+    if not base_hex:
+        return _DEFAULT_THEME
+
+    base_rgb = _hex_to_rgb(base_hex)
+    background = (*base_rgb, 255)
+    card_rgb = _mix_rgb(base_rgb, (255, 255, 255), 0.18)
+    outline_rgb = _mix_rgb(base_rgb, (0, 0, 0), 0.25)
+    primary_rgb = _mix_rgb(base_rgb, (0, 0, 0), 0.3)
+    bar_rgb = _mix_rgb(card_rgb, (255, 255, 255), 0.2)
+
+    text_rgb = (42, 32, 68)
+    if _relative_luminance(card_rgb) < 0.35:
+        text_rgb = (240, 238, 245)
+
+    return {
+        "background": background,
+        "card": (*card_rgb, 255),
+        "outline": (*outline_rgb, 255),
+        "primary": (*primary_rgb, 255),
+        "text": (*text_rgb, 255),
+        "bar_bg": (*bar_rgb, 255),
+        "accent": _DEFAULT_THEME["accent"],
+    }
+
+
 def _strip_symbols_emojis(text: str) -> str:
     """Remove emoji/symbol-like characters to avoid rendering issues.
 
@@ -165,16 +238,18 @@ def render_profile_card(
     title_text: str | None = None,
     subtitle_line1: str | None = None,
     subtitle_line2: str | None = None,
+    house_name: str | None = None,
 ) -> BytesIO:
     width, height = 800, 360
-    # Purple theme (similar to sample)
-    background = (222, 210, 255, 255)   # deeper lavender
-    card_bg = (201, 182, 255, 255)      # medium lavender
-    primary = (131, 96, 195, 255)       # #8360C3
-    gold = (231, 185, 96, 255)          # #E7B960
-    text = (54, 38, 100, 255)           # dark purple
+    theme = _resolve_house_theme(house_name)
+    background = theme["background"]
+    card_bg = theme["card"]
+    primary = theme["primary"]
+    text = theme["text"]
+    outline = theme["outline"]
+    bar_bg = theme["bar_bg"]
 
-    img = Image.new("RGBA", (width, height), color=(0, 0, 0, 0))
+    img = Image.new("RGBA", (width, height), color=background)
     draw = ImageDraw.Draw(img)
 
     # Transparent canvas: skip decorative background texture
@@ -188,7 +263,7 @@ def render_profile_card(
     glass = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     gdraw = ImageDraw.Draw(glass)
     # Solid purple fill inside the card box (no transparency)
-    gdraw.rounded_rectangle(panel_rect, radius=22, fill=(201, 182, 255, 255), outline=(131, 96, 195, 255), width=2)
+    gdraw.rounded_rectangle(panel_rect, radius=22, fill=card_bg, outline=outline, width=2)
     img = Image.alpha_composite(img, glass)
     draw = ImageDraw.Draw(img)
 
@@ -266,7 +341,7 @@ def render_profile_card(
     bar_w = width - bar_x - margin - 24
     bar_h = 26
     under_gap = 8
-    draw.rounded_rectangle([(bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h)], radius=8, fill=(232, 224, 214, 255))
+    draw.rounded_rectangle([(bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h)], radius=8, fill=bar_bg)
     xfill_w = int(bar_w * max(0.0, min(1.0, progress_ratio)))
     if xfill_w > 0:
         draw.rounded_rectangle([(bar_x, bar_y), (bar_x + xfill_w, bar_y + bar_h)], radius=8, fill=primary)
@@ -354,16 +429,20 @@ def render_stats_and_month_calendar(
     month: int,
     played_days: set[int],
     today_day: int | None,
+    house_name: str | None = None,
 ) -> BytesIO:
     """Render left stats and right current month calendar within a shadowed rounded container.
     Ensures day numbers are centered in cells.
     """
     width, height = 800, 360
-    bg = (0, 0, 0, 0)
-    text = (54, 38, 100, 255)
-    primary = (131, 96, 195, 255)
-    gold = (231, 185, 96, 255)
-    card_bg = (201, 182, 255, 255)
+    theme = _resolve_house_theme(house_name)
+    bg = theme["background"]
+    text = theme["text"]
+    primary = theme["primary"]
+    accent = theme["accent"]
+    card_bg = theme["card"]
+    outline = theme["outline"]
+    neutral = theme["bar_bg"]
     canvas = Image.new("RGBA", (width, height), bg)
     draw = ImageDraw.Draw(canvas)
     title_font, body_font = _load_fonts(26, 18)
@@ -375,7 +454,7 @@ def render_stats_and_month_calendar(
     glass2 = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     gdraw2 = ImageDraw.Draw(glass2)
     # Solid purple fill inside the stats/calendar box (no transparency)
-    gdraw2.rounded_rectangle(panel_rect2, radius=22, fill=(201, 182, 255, 255), outline=(131, 96, 195, 255), width=2)
+    gdraw2.rounded_rectangle(panel_rect2, radius=22, fill=card_bg, outline=outline, width=2)
     canvas = Image.alpha_composite(canvas, glass2)
     draw = ImageDraw.Draw(canvas)
 
@@ -429,9 +508,9 @@ def render_stats_and_month_calendar(
             if day == 0:
                 continue
             rect = (x0, y0, x0 + cell_w, y0 + cell_h)
-            fill = (232, 224, 214, 255)
+            fill = neutral
             if day in played_days:
-                fill = gold
+                fill = accent
             draw.rounded_rectangle(rect, radius=6, fill=fill)
             if today_day and day == today_day:
                 draw.rounded_rectangle(rect, radius=6, outline=primary, width=2)

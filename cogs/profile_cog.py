@@ -180,6 +180,7 @@ class ProfileCog(commands.Cog):
             title_text=display_name,
             subtitle_line1=subtitle_line1,
             subtitle_line2=subtitle_line2,
+            house_name=house_name,
         )
         # Fetch month streak for stats+calendar section
         month = await fetch_month_streak_days(target.id, interaction.guild.id)
@@ -194,6 +195,7 @@ class ProfileCog(commands.Cog):
             int(month["month"]),
             set(int(d) for d in month["days"]),
             int(month["today"]) if month["today"] else None,
+            house_name=house_name,
         )
         top_img = Image.open(profile_buf)
         bottom_img = Image.open(stats_buf)
