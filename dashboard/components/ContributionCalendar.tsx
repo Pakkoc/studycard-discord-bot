@@ -61,16 +61,16 @@ export default function ContributionCalendar({ year, days, onSelectDate }: Props
           ))}
         </div>
       </div>
-      {/* Legend vertical */}
+      {/* Legend vertical (많음 → 적음) */}
       <div style={{ display: "grid", gridTemplateRows: "auto repeat(6, 14px) auto", rowGap: 6, color: "#6b7280", fontSize: 12 }}>
-        <span style={{ textAlign: "center" }}>적음</span>
-        <LegendBox color="#e5e7eb" />
-        <LegendBox color="#dbeafe" />
-        <LegendBox color="#bfdbfe" />
-        <LegendBox color="#93c5fd" />
-        <LegendBox color="#60a5fa" />
-        <LegendBox color="#2563eb" />
         <span style={{ textAlign: "center" }}>많음</span>
+        <LegendBox color="#2563eb" />
+        <LegendBox color="#60a5fa" />
+        <LegendBox color="#93c5fd" />
+        <LegendBox color="#bfdbfe" />
+        <LegendBox color="#dbeafe" />
+        <LegendBox color="#e5e7eb" />
+        <span style={{ textAlign: "center" }}>적음</span>
       </div>
     </div>
   );
