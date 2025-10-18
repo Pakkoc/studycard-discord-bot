@@ -268,7 +268,62 @@ def render_profile_card(
     draw = ImageDraw.Draw(img)
 
     # Header
-    draw_bold_text(draw, margin + 24, 16, "학생증", title_font, primary, strength=1)
+    # Header title
+    header_text = "학생증"
+    header_x = margin + 24
+    header_y = 16
+    header_bold_strength = 1
+    draw_bold_text(draw, header_x, header_y, header_text, title_font, primary, strength=header_bold_strength)
+    # Attach optional voost icon to the right of the header if available
+    try:
+        voost_candidates = [
+            Path("image/voost.png"),
+            Path("image/@voost.png"),
+            Path("assets/voost.png"),
+            Path("assets/@voost.png"),
+            Path("assets/images/voost.png"),
+            Path("assets/images/@voost.png"),
+        ]
+        voost_path = next((p for p in voost_candidates if p.exists()), None)
+        if voost_path is not None:
+            vb = draw.textbbox((header_x, header_y), header_text, font=title_font)
+            text_w = (vb[2] - vb[0]) if vb else int(draw.textlength(header_text, font=title_font))
+            text_h = (vb[3] - vb[1]) if vb else 32
+            icon = Image.open(voost_path).convert("RGBA")
+            # Trim transparent margins for tight visual alignment
+            try:
+                alpha_ch = icon.split()[3]
+                bbox = alpha_ch.getbbox()
+                if bbox:
+                    icon = icon.crop(bbox)
+            except Exception:
+                pass
+            # Match text height closely for balanced look
+            target_h = max(18, int(text_h * 1.00))
+            scale = target_h / float(icon.height)
+            target_w = max(18, int(icon.width * scale))
+            icon = icon.resize((target_w, target_h), Image.LANCZOS)
+            # Compute visual center of bold-rendered header and center icon precisely
+            vis_top = header_y - header_bold_strength
+            vis_bottom = header_y + text_h + header_bold_strength
+            center_y = (vis_top + vis_bottom) / 2.0
+            # Place right next to the text with a tight, consistent gap
+            gap = 4
+            ix = int(round(header_x + text_w + gap))
+            # Nudge slightly downward for optical baseline alignment
+            nudge_y = 13
+            iy = int(round(center_y - target_h / 2.0 + nudge_y))
+            # Subtle glow to improve legibility on varied backgrounds
+            try:
+                glow = Image.new("RGBA", icon.size, (primary[0], primary[1], primary[2], 90))
+                glow.putalpha(icon.split()[3])
+                glow = glow.filter(ImageFilter.GaussianBlur(1.2))
+                img.paste(glow, (ix, iy), glow)
+            except Exception:
+                pass
+            img.paste(icon, (ix, iy), icon)
+    except Exception:
+        pass
 
     # Avatar block on the left (rounded square)
     holder_size = 160
@@ -341,15 +396,51 @@ def render_profile_card(
     bar_w = width - bar_x - margin - 24
     bar_h = 26
     under_gap = 8
-    draw.rounded_rectangle([(bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h)], radius=8, fill=bar_bg)
+    # Track color: slightly darker than card for contrast, with subtle border
+    card_rgb = (card_bg[0], card_bg[1], card_bg[2])
+    track_rgb = _mix_rgb(card_rgb, (0, 0, 0), 0.15)
+    track = (*track_rgb, 255)
+    border_rgb = _mix_rgb(track_rgb, (255, 255, 255), 0.15)
+    border = (*border_rgb, 255)
+    white = (255, 255, 255, 255)
+
+    # Always show full-length track with outline for 0% readability
+    draw.rounded_rectangle([(bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h)], radius=8, fill=track, outline=border, width=1)
+
+    # Filled portion in white
     xfill_w = int(bar_w * max(0.0, min(1.0, progress_ratio)))
     if xfill_w > 0:
-        draw.rounded_rectangle([(bar_x, bar_y), (bar_x + xfill_w, bar_y + bar_h)], radius=8, fill=primary)
+        draw.rounded_rectangle([(bar_x, bar_y), (bar_x + xfill_w, bar_y + bar_h)], radius=8, fill=white)
+        # Golden end-dot for focus
+        end_x = min(bar_x + xfill_w, bar_x + bar_w - 2)
+        cy = bar_y + bar_h // 2
+        r = 3
+        dot_rect = (end_x - r, cy - r, end_x + r, cy + r)
+        draw.ellipse(dot_rect, fill=theme["accent"])
+
+    # Progress label: inside when >=40%, else to the right (fallback below if tight)
     progress_pct = int(progress_ratio * 100)
     prog_text = f"{xp_in_level}/{max(1, level_need)} XP ({progress_pct}%)"
     xp_font_small = _load_fonts(38, 20)[1]
     t_w = draw.textlength(prog_text, font=xp_font_small)
-    draw.text((bar_x + bar_w - t_w, bar_y + bar_h + under_gap), prog_text, fill=text, font=xp_font_small)
+    t_bbox = draw.textbbox((0, 0), prog_text, font=xp_font_small)
+    t_h = (t_bbox[3] - t_bbox[1]) if t_bbox else 14
+    placed = False
+    if progress_ratio >= 0.4 and xfill_w >= t_w + 12:
+        tx = max(bar_x + 8, min(bar_x + xfill_w - t_w - 8, bar_x + bar_w - t_w - 8))
+        ty = bar_y + (bar_h - t_h) // 2
+        draw.text((tx, ty), prog_text, fill=text, font=xp_font_small)
+        placed = True
+    if not placed:
+        # Try to place to the right of the bar; clamp within canvas
+        tx = min(width - margin - t_w, bar_x + bar_w + 8)
+        ty = bar_y + (bar_h - t_h) // 2
+        if tx > bar_x + bar_w + 2:
+            draw.text((tx, ty), prog_text, fill=text, font=xp_font_small)
+            placed = True
+    if not placed:
+        # Fallback: below the bar (original position)
+        draw.text((bar_x + bar_w - t_w, bar_y + bar_h + under_gap), prog_text, fill=text, font=xp_font_small)
 
     # (moved watermark to stats panel for visual balance)
 
