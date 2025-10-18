@@ -284,37 +284,46 @@ async def main() -> None:
     @bot.event
     async def on_member_remove(member: discord.Member):
         try:
-            # Control whether to reset stats on leave via env (default: 0 => keep data)
-            reset_on_leave = get_env_int("RESET_USER_STATS_ON_LEAVE", 0)
-            if reset_on_leave <= 0:
+            # If total study time is within threshold, delete all data; otherwise keep or purge via env flag
+            from core.database import fetch_user_total_seconds, delete_user_all_data, purge_user_non_session_data, get_pool
+
+            threshold_sec = get_env_int("LEAVE_DELETE_THRESHOLD_SEC", 1800)
+            try:
+                total_sec = await fetch_user_total_seconds(member.id, member.guild.id)
+            except Exception as qexc:
+                logging.warning("Failed to fetch total_seconds on leave: %s", qexc)
+                total_sec = 0
+
+            if total_sec <= max(0, threshold_sec):
+                await delete_user_all_data(member.id, member.guild.id)
                 logging.info(
-                    "Member %s left guild %s; keeping stats as configured (RESET_USER_STATS_ON_LEAVE=0)",
+                    "Deleted ALL data for leaving member %s in guild %s (total_seconds=%s <= %ss)",
+                    member.id,
+                    member.guild.id,
+                    total_sec,
+                    threshold_sec,
+                )
+                return
+
+            # Fallback to previous behavior controlled by env
+            reset_on_leave = get_env_int("RESET_USER_STATS_ON_LEAVE", 0)
+            if reset_on_leave > 0:
+                await purge_user_non_session_data(member.id, member.guild.id)
+                logging.info(
+                    "Purged non-session data for leaving member %s in guild %s (RESET_USER_STATS_ON_LEAVE=1)",
                     member.id,
                     member.guild.id,
                 )
-                # Mark status left
-                try:
-                    from core.database import get_pool
-                    pool = await get_pool()
-                    async with pool.acquire() as conn:
-                        await conn.execute(
-                            "UPDATE users SET status='left' WHERE user_id=$1 AND guild_id=$2",
-                            member.id,
-                            member.guild.id,
-                        )
-                except Exception:
-                    pass
-                return
-            from core.database import purge_user_non_session_data
-            await purge_user_non_session_data(member.id, member.guild.id)
-            logging.info(
-                "Purged non-session data for leaving member %s in guild %s (RESET_USER_STATS_ON_LEAVE=1)",
-                member.id,
-                member.guild.id,
-            )
+            else:
+                logging.info(
+                    "Member %s left guild %s; keeping stats (total_seconds=%s > %ss)",
+                    member.id,
+                    member.guild.id,
+                    total_sec,
+                    threshold_sec,
+                )
             # Also mark status left
             try:
-                from core.database import get_pool
                 pool = await get_pool()
                 async with pool.acquire() as conn:
                     await conn.execute(

@@ -197,6 +197,43 @@ async def purge_user_non_session_data(user_id: int, guild_id: int) -> None:
             )
 
 
+async def delete_user_all_data(user_id: int, guild_id: int) -> None:
+    """Hard-delete a user's data for a specific guild.
+
+    This removes from dependent tables first (due to FK), then from users.
+    Safe to call repeatedly.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM daily_streaks WHERE user_id=$1 AND guild_id=$2",
+                user_id,
+                guild_id,
+            )
+            await conn.execute(
+                "DELETE FROM voice_sessions WHERE user_id=$1 AND guild_id=$2",
+                user_id,
+                guild_id,
+            )
+            await conn.execute(
+                "DELETE FROM users WHERE user_id=$1 AND guild_id=$2",
+                user_id,
+                guild_id,
+            )
+
+
+async def fetch_user_total_seconds(user_id: int, guild_id: int) -> int:
+    """Return user's total_seconds safely (0 if row missing)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT COALESCE(total_seconds,0) AS total_seconds FROM users WHERE user_id=$1 AND guild_id=$2",
+            user_id,
+            guild_id,
+        )
+        return int(row["total_seconds"]) if row else 0
+
 async def record_voice_session(
     user_id: int,
     guild_id: int,
