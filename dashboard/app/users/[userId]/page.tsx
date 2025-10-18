@@ -1,6 +1,8 @@
 import LineChart from "@/components/LineChart";
 import Heatmap from "@/components/Heatmap";
 import ContributionCalendar from "@/components/ContributionCalendar";
+import CircularHeatmap from "@/components/CircularHeatmap";
+import EnergyCurve from "@/components/EnergyCurve";
 import {
   fetchUserDetail,
   fetchUserEntryLogs,
@@ -80,8 +82,25 @@ export default async function UserPage({ params, searchParams }: { params: Param
       </div>
 
       <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="title" style={{ marginBottom: 8 }}>요일·시간대 히트맵 (최근 90일)</div>
-        <Heatmap data={(heat ?? []) as any} />
+        <div className="title" style={{ marginBottom: 8 }}>요일·시간대 시각화 (최근 90일)</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div>
+            <div className="subtle" style={{ marginBottom: 8 }}>원형 시계형 히트맵</div>
+            <CircularHeatmap
+              labels={Array.from({ length: 24 }, (_, h) => `${h}`)}
+              data={hourIntensityFromHeat(heat as any)}
+              centerText={sumHours(heat as any)}
+            />
+          </div>
+          <div>
+            <div className="subtle" style={{ marginBottom: 8 }}>에너지 커브(%)</div>
+            <EnergyCurve
+              labels={Array.from({ length: 24 }, (_, h) => `${h}`)}
+              data={hourIntensityFromHeat(heat as any)}
+              label="아칸 집중형"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="panel" style={{ marginBottom: 16 }}>
@@ -115,6 +134,21 @@ function secondsToHours(sec: number) {
   const hours = Math.floor((sec || 0) / 3600);
   const mins = Math.round(((sec || 0) % 3600) / 60);
   return `${hours}h ${mins}m`;
+}
+
+function hourIntensityFromHeat(heat: any[]): number[] {
+  const arr = new Array(24).fill(0);
+  for (const c of heat || []) {
+    const h = Number(c.hour ?? 0);
+    const v = Number(c.count ?? 0);
+    if (h >= 0 && h < 24) arr[h] += v;
+  }
+  return arr;
+}
+
+function sumHours(heat: any[]): number {
+  const total = (heat || []).reduce((acc, c) => acc + Number(c.count ?? 0), 0);
+  return total;
 }
 
 const tdMono: React.CSSProperties = {
