@@ -113,8 +113,8 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
             <tbody>
               {rows.map((r) => (
                 <tr key={String(r.user_id)}>
-                  <td style={tdMono}>{String(r.user_id)}</td>
-                  <td style={td}>{r.nickname ?? ""}</td>
+                  <td style={tdMono}><a href={`/users/${String(r.user_id)}`} style={{ color: "var(--accent)", textDecoration: "none" }}>{String(r.user_id)}</a></td>
+                  <td style={td}><a href={`/users/${String(r.user_id)}`} style={{ color: "var(--accent)", textDecoration: "none" }}>{r.nickname ?? ""}</a></td>
                   <td style={tdMono}>{r.student_no ?? ""}</td>
                   <td style={td}><StatusBadge status={r.status} /></td>
                   <td style={td}>{r.level_name ?? ""}</td>

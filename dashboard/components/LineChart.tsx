@@ -4,7 +4,15 @@ import Chart from "chart.js/auto";
 
 type Props = {
   labels: string[];
-  series: { label: string; data: number[]; color: string }[];
+  series: {
+    label: string;
+    data: number[];
+    color: string;
+    showLine?: boolean;
+    pointRadius?: number | number[];
+    borderWidth?: number;
+    pointBackgroundColors?: string[];
+  }[];
 };
 
 export default function LineChart({ labels, series }: Props) {
@@ -30,16 +38,19 @@ export default function LineChart({ labels, series }: Props) {
           backgroundColor: s.color,
           fill: false,
           tension: 0.3,
+          pointBackgroundColor: s.pointBackgroundColors ?? s.color,
+          pointRadius: s.pointRadius ?? 2,
+          borderWidth: s.borderWidth ?? 2,
         })),
       },
       options: {
         plugins: {
-          legend: { labels: { color: "#e5e7eb" } },
+          legend: { labels: { color: "#111827" } },
           tooltip: { enabled: true },
         },
         scales: {
-          x: { ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
-          y: { ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
+          x: { ticks: { color: "#6b7280" }, grid: { color: "#e5e7eb" } },
+          y: { ticks: { color: "#6b7280" }, grid: { color: "#e5e7eb" } },
         },
       },
     });

@@ -37,6 +37,27 @@ export type FetchPagedOptions = {
   query?: string;
 };
 
+export type UserDetail = {
+  user_id: string;
+  nickname: string | null;
+  student_no: string | null;
+  status: "active" | "left";
+  level_name: string | null;
+  xp: number;
+  total_seconds: number;
+  last_seen_at: string | null;
+};
+
+export type UserEntryLog = {
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+};
+
+export type UserDailyPoint = { date: string; hours: number };
+
+export type HeatmapCell = { dow: number; hour: number; count: number };
+
 export async function fetchGuildUserStats(
   guildId: bigint,
   limit = 100,
@@ -199,6 +220,135 @@ export async function fetchGuildUserStatsPaged(
       })),
       total,
     };
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchUserDetail(guildId: bigint, userId: bigint): Promise<UserDetail | null> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      `
+      SELECT u.user_id, u.nickname, u.student_no, u.status, u.level_name, COALESCE(u.xp,0) AS xp,
+             COALESCE(u.total_seconds,0) AS total_seconds,
+             to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
+      FROM users u
+      WHERE u.guild_id=$1 AND u.user_id=$2
+      `,
+      [guildId.toString(), userId.toString()]
+    );
+    if (!rows[0]) return null;
+    const r = rows[0];
+    return {
+      user_id: String(r.user_id),
+      nickname: r.nickname ?? null,
+      student_no: r.student_no ?? null,
+      status: (r.status as string) === "left" ? "left" : "active",
+      level_name: (r.level_name as string | null) ?? null,
+      xp: Number(r.xp ?? 0),
+      total_seconds: Number(r.total_seconds ?? 0),
+      last_seen_at: (r.last_seen_at as string | null) ?? null,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchUserEntryLogs(
+  guildId: bigint,
+  userId: bigint,
+  limit = 100
+): Promise<UserEntryLog[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      `
+      SELECT to_char(started_at, 'YYYY-MM-DD HH24:MI') AS started_at,
+             to_char(ended_at,   'YYYY-MM-DD HH24:MI') AS ended_at,
+             duration_seconds
+      FROM voice_sessions
+      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL
+      ORDER BY ended_at DESC
+      LIMIT $3
+      `,
+      [guildId.toString(), userId.toString(), limit]
+    );
+    return rows.map((r) => ({
+      started_at: String(r.started_at),
+      ended_at: String(r.ended_at),
+      duration_seconds: Number(r.duration_seconds ?? 0),
+    }));
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchUserDailyTrend(
+  guildId: bigint,
+  userId: bigint,
+  days = 30
+): Promise<UserDailyPoint[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const start = new Date();
+    start.setDate(start.getDate() - (days - 1));
+    const { rows } = await client.query(
+      `
+      SELECT date_trunc('day', ended_at) AS d,
+             SUM(duration_seconds) AS seconds
+      FROM voice_sessions
+      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3
+      GROUP BY d
+      ORDER BY d
+      `,
+      [guildId.toString(), userId.toString(), start]
+    );
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      const d = new Date(r.d).toISOString().slice(0, 10);
+      map.set(d, Number(r.seconds ?? 0));
+    }
+    const out: UserDailyPoint[] = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      const seconds = map.get(key) ?? 0;
+      out.push({ date: key, hours: Math.round((seconds / 3600) * 100) / 100 });
+    }
+    return out;
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchUserWeekdayHourHeatmap(
+  guildId: bigint,
+  userId: bigint,
+  days = 90
+): Promise<HeatmapCell[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    const { rows } = await client.query(
+      `
+      SELECT EXTRACT(DOW FROM ended_at)::int AS dow,
+             EXTRACT(HOUR FROM ended_at)::int AS hour,
+             COUNT(*)::int AS cnt
+      FROM voice_sessions
+      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3
+      GROUP BY dow, hour
+      ORDER BY dow, hour
+      `,
+      [guildId.toString(), userId.toString(), start]
+    );
+    return rows.map((r) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.cnt) }));
   } finally {
     client.release();
   }

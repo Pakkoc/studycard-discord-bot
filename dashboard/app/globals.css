@@ -1,11 +1,11 @@
 :root {
-  color-scheme: dark;
-  --bg: #000000;
-  --panel: #111827;
-  --text: #e5e7eb;
-  --muted: #9ca3af;
-  --border: #1f2937;
-  --accent: #60a5fa;
+  color-scheme: light;
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --text: #111827;
+  --muted: #6b7280; /* slate-500 */
+  --border: #e5e7eb; /* gray-200 */
+  --accent: #2563eb; /* blue-600 */
 }
 
 html, body {
@@ -43,8 +43,8 @@ button:hover { border-color: var(--accent); }
 /* table sort icon */
 .sort-btn { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none; }
 .sort-icon { width: 16px; height: 16px; opacity: 0.9; }
-.sort-btn:hover { color: #e5e7eb; }
-.sort-active { color: #ffffff; opacity: 1; }
+.sort-btn:hover { color: var(--text); }
+.sort-active { color: var(--text); opacity: 1; }
 
 /* Responsive */
 @media (max-width: 1024px) {

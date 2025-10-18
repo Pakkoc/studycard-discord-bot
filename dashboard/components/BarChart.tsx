@@ -8,7 +8,7 @@ type Props = {
   color?: string;
 };
 
-export default function BarChart({ labels, data, color = "#60a5fa" }: Props) {
+export default function BarChart({ labels, data, color = "#3b82f6" }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<Chart | null>(null);
 
@@ -26,8 +26,8 @@ export default function BarChart({ labels, data, color = "#60a5fa" }: Props) {
       options: {
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
-          y: { ticks: { color: "#9ca3af" }, grid: { color: "#1f2937" } },
+          x: { ticks: { color: "#6b7280" }, grid: { color: "#e5e7eb" } },
+          y: { ticks: { color: "#6b7280" }, grid: { color: "#e5e7eb" } },
         },
       },
     });
