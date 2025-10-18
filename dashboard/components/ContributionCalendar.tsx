@@ -30,7 +30,7 @@ export default function ContributionCalendar({ year, days, onSelectDate }: Props
   }
 
   return (
-    <div style={{ display: "flex", gap: 8 }}>
+    <div style={{ display: "flex", gap: 12 }}>
       {/* Y labels */}
       <div style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4, marginTop: 20, color: "#6b7280", fontSize: 12 }}>
         <span>일</span>
@@ -61,16 +61,16 @@ export default function ContributionCalendar({ year, days, onSelectDate }: Props
           ))}
         </div>
       </div>
-      {/* Legend */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 12, color: "#6b7280", fontSize: 12 }}>
-        <span>적음</span>
+      {/* Legend vertical */}
+      <div style={{ display: "grid", gridTemplateRows: "auto repeat(6, 14px) auto", rowGap: 6, color: "#6b7280", fontSize: 12 }}>
+        <span style={{ textAlign: "center" }}>적음</span>
         <LegendBox color="#e5e7eb" />
         <LegendBox color="#dbeafe" />
         <LegendBox color="#bfdbfe" />
         <LegendBox color="#93c5fd" />
         <LegendBox color="#60a5fa" />
         <LegendBox color="#2563eb" />
-        <span>많음</span>
+        <span style={{ textAlign: "center" }}>많음</span>
       </div>
     </div>
   );

@@ -63,9 +63,15 @@ export default async function UserPage({ params, searchParams }: { params: Param
       <div className="panel" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
           <div className="title">연간 잔디</div>
-          <div className="subtle">{calendarYear}년</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <a className="subtle" href={`?year=${calendarYear - 1}`} style={{ textDecoration: "none", color: "var(--accent)" }}>{calendarYear - 1}년</a>
+            <span className="subtle" style={{ color: "#6b7280" }}>|</span>
+            <a className="subtle" href={`?year=${calendarYear}`} style={{ textDecoration: "none", color: "var(--accent)", fontWeight: 700 }}>{calendarYear}년</a>
+            <span className="subtle" style={{ color: "#6b7280" }}>|</span>
+            <a className="subtle" href={`?year=${calendarYear + 1}`} style={{ textDecoration: "none", color: "var(--accent)" }}>{calendarYear + 1}년</a>
+          </div>
         </div>
-        <ContributionCalendar year={calendarYear} days={calendarDataRes as any} onSelectDate={() => {}} />
+        <ContributionCalendar year={calendarYear} days={calendarDataRes as any} />
       </div>
 
       <div className="panel" style={{ marginBottom: 16 }}>
