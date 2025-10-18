@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import Chart from "chart.js/auto";
+import type { Chart as ChartJS } from "chart.js";
 
 type Props = {
   labels: string[]; // e.g., ["0", ..., "23"]
@@ -10,7 +11,7 @@ type Props = {
 
 export default function CircularHeatmap({ labels, data, centerText }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null);
-  const chartRef = useRef<Chart | null>(null);
+  const chartRef = useRef<ChartJS<"polarArea"> | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
