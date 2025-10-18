@@ -58,6 +58,9 @@ export type UserDailyPoint = { date: string; hours: number };
 
 export type HeatmapCell = { dow: number; hour: number; count: number };
 
+export type CalendarDay = { date: string; seconds: number; sessions: number };
+export type DayHourBin = { hour: number; seconds: number; sessions: number };
+
 export async function fetchGuildUserStats(
   guildId: bigint,
   limit = 100,
@@ -349,6 +352,78 @@ export async function fetchUserWeekdayHourHeatmap(
       [guildId.toString(), userId.toString(), start]
     );
     return rows.map((r) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.cnt) }));
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchUserCalendarYear(
+  guildId: bigint,
+  userId: bigint,
+  year: number
+): Promise<CalendarDay[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const start = new Date(Date.UTC(year, 0, 1));
+    const end = new Date(Date.UTC(year + 1, 0, 1));
+    const { rows } = await client.query(
+      `
+      WITH days AS (
+        SELECT generate_series($3::timestamptz, $4::timestamptz - interval '1 day', interval '1 day') AS d
+      ), daily AS (
+        SELECT date_trunc('day', ended_at) AS d,
+               SUM(duration_seconds) AS seconds,
+               COUNT(*) AS sessions
+        FROM voice_sessions
+        WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3 AND ended_at < $4
+        GROUP BY d
+      )
+      SELECT to_char(days.d, 'YYYY-MM-DD') AS date,
+             COALESCE(daily.seconds, 0) AS seconds,
+             COALESCE(daily.sessions, 0) AS sessions
+      FROM days
+      LEFT JOIN daily ON daily.d = days.d
+      ORDER BY days.d
+      `,
+      [guildId.toString(), userId.toString(), start, end]
+    );
+    return rows.map((r) => ({ date: String(r.date), seconds: Number(r.seconds || 0), sessions: Number(r.sessions || 0) }));
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchUserDayHours(
+  guildId: bigint,
+  userId: bigint,
+  date: string // 'YYYY-MM-DD'
+): Promise<DayHourBin[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      `
+      SELECT EXTRACT(HOUR FROM ended_at)::int AS hour,
+             COALESCE(SUM(duration_seconds), 0) AS seconds,
+             COUNT(*) AS sessions
+      FROM voice_sessions
+      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND to_char(ended_at, 'YYYY-MM-DD') = $3
+      GROUP BY hour
+      ORDER BY hour
+      `,
+      [guildId.toString(), userId.toString(), date]
+    );
+    const map = new Map<number, { seconds: number; sessions: number }>();
+    for (const r of rows) {
+      map.set(Number(r.hour), { seconds: Number(r.seconds || 0), sessions: Number(r.sessions || 0) });
+    }
+    const out: DayHourBin[] = [];
+    for (let h = 0; h < 24; h++) {
+      const v = map.get(h) || { seconds: 0, sessions: 0 };
+      out.push({ hour: h, seconds: v.seconds, sessions: v.sessions });
+    }
+    return out;
   } finally {
     client.release();
   }

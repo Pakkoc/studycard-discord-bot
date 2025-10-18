@@ -1,15 +1,17 @@
 import LineChart from "@/components/LineChart";
 import Heatmap from "@/components/Heatmap";
+import ContributionCalendar from "@/components/ContributionCalendar";
 import {
   fetchUserDetail,
   fetchUserEntryLogs,
   fetchUserDailyTrend,
   fetchUserWeekdayHourHeatmap,
+  fetchUserCalendarYear,
 } from "@/lib/stats";
 
 type Params = { userId: string };
 
-export default async function UserPage({ params }: { params: Params }) {
+export default async function UserPage({ params, searchParams }: { params: Params; searchParams?: { [key: string]: string | string[] | undefined } }) {
   const userId = params.userId;
   const guildIdFromEnv = process.env.DEFAULT_GUILD_ID || process.env.DEV_GUILD_ID || "";
   const hasGuild = Boolean(guildIdFromEnv);
@@ -22,6 +24,12 @@ export default async function UserPage({ params }: { params: Params }) {
     fetchUserDailyTrend(guildId, userIdBig, 30),
     fetchUserWeekdayHourHeatmap(guildId, userIdBig, 90),
   ]);
+
+  // Year param
+  const currentYear = new Date().getFullYear();
+  const parsedYear = Number((searchParams?.year as string) || currentYear);
+  const calendarYear = Number.isFinite(parsedYear) && parsedYear >= 2000 && parsedYear <= 3000 ? parsedYear : currentYear;
+  const calendarDataRes = await fetchUserCalendarYear(guildId, userIdBig, calendarYear);
 
   return (
     <main>
@@ -50,6 +58,14 @@ export default async function UserPage({ params }: { params: Params }) {
           labels={(trend ?? []).map((t: any) => String(t.date).slice(5))}
           series={[{ label: "Hours", data: (trend ?? []).map((t: any) => Number(t.hours)), color: "#3b82f6" }]}
         />
+      </div>
+
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div className="title">연간 잔디</div>
+          <div className="subtle">{calendarYear}년</div>
+        </div>
+        <ContributionCalendar year={calendarYear} days={calendarDataRes as any} onSelectDate={() => {}} />
       </div>
 
       <div className="panel" style={{ marginBottom: 16 }}>

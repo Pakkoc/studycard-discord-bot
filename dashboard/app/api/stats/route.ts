@@ -6,6 +6,8 @@ import {
   fetchUserEntryLogs,
   fetchUserDailyTrend,
   fetchUserWeekdayHourHeatmap,
+  fetchUserCalendarYear,
+  fetchUserDayHours,
 } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +21,10 @@ export async function GET(req: NextRequest) {
   const page = Number(searchParams.get("page") || 1);
   const sort = (searchParams.get("sort") || undefined) as any;
   const order = (searchParams.get("order") || undefined) as any;
-  const scope = searchParams.get("scope") || undefined; // detail | logs | trend | heatmap
+  const scope = searchParams.get("scope") || undefined; // detail | logs | trend | heatmap | calendar | day-hours
   const days = Number(searchParams.get("days") || 30);
+  const yearParam = searchParams.get("year");
+  const dateParam = searchParams.get("date");
 
   if (!guildId) {
     return new Response(JSON.stringify({ error: "guild_id is required" }), { status: 400 });
@@ -45,6 +49,16 @@ export async function GET(req: NextRequest) {
       if (scope === "heatmap") {
         const data = await fetchUserWeekdayHourHeatmap(BigInt(guildId), userId, Math.min(Math.max(days, 1), 365));
         return Response.json({ data });
+      }
+      if (scope === "calendar") {
+        const year = Number(yearParam || new Date().getFullYear());
+        const data = await fetchUserCalendarYear(BigInt(guildId), userId, year);
+        return Response.json({ data, year });
+      }
+      if (scope === "day-hours") {
+        if (!dateParam) return new Response(JSON.stringify({ error: "date is required" }), { status: 400 });
+        const data = await fetchUserDayHours(BigInt(guildId), userId, dateParam);
+        return Response.json({ data, date: dateParam });
       }
       return new Response(JSON.stringify({ error: "invalid scope" }), { status: 400 });
     }
