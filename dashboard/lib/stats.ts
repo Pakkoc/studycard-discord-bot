@@ -57,7 +57,7 @@ export type UserEntryLog = {
 export type UserDailyPoint = { date: string; hours: number };
 export type UserMonthlyPoint = { month: string; hours: number };
 
-export type HeatmapCell = { dow: number; hour: number; count: number };
+export type HeatmapCell = { dow: number; hour: number; count: number; seconds: number };
 
 export type CalendarDay = { date: string; seconds: number; sessions: number };
 export type DayHourBin = { hour: number; seconds: number; sessions: number };
@@ -344,7 +344,8 @@ export async function fetchUserWeekdayHourHeatmap(
       `
       SELECT EXTRACT(DOW FROM ended_at)::int AS dow,
              EXTRACT(HOUR FROM ended_at)::int AS hour,
-             COUNT(*)::int AS cnt
+             COUNT(*)::int AS cnt,
+             COALESCE(SUM(duration_seconds), 0) AS seconds
       FROM voice_sessions
       WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3
       GROUP BY dow, hour
@@ -352,7 +353,7 @@ export async function fetchUserWeekdayHourHeatmap(
       `,
       [guildId.toString(), userId.toString(), start]
     );
-    return rows.map((r) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.cnt) }));
+    return rows.map((r) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.cnt), seconds: Number(r.seconds || 0) }));
   } finally {
     client.release();
   }

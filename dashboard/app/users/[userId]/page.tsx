@@ -87,17 +87,17 @@ export default async function UserPage({ params, searchParams }: { params: Param
           <div>
             <div className="subtle" style={{ marginBottom: 8 }}>원형 시계형 히트맵</div>
             <CircularHeatmap
-              labels={Array.from({ length: 24 }, (_, h) => `${h}`)}
-              data={hourIntensityFromHeat(heat as any)}
-              centerText={sumHours(heat as any)}
+              labels={clockLabels()}
+              data={hourSecondsFromHeat(heat as any).map((s) => Math.round((s / 3600) * 100) / 100)}
+              centerText={`${formatPeak(hourSecondsFromHeat(heat as any))}`}
             />
           </div>
           <div>
             <div className="subtle" style={{ marginBottom: 8 }}>에너지 커브(%)</div>
             <EnergyCurve
-              labels={Array.from({ length: 24 }, (_, h) => `${h}`)}
-              data={hourIntensityFromHeat(heat as any)}
-              label="아칸 집중형"
+              labels={clockLabels()}
+              data={hourSecondsFromHeat(heat as any)}
+              label="시간 분포(%)"
             />
           </div>
         </div>
@@ -149,6 +149,30 @@ function hourIntensityFromHeat(heat: any[]): number[] {
 function sumHours(heat: any[]): number {
   const total = (heat || []).reduce((acc, c) => acc + Number(c.count ?? 0), 0);
   return total;
+}
+
+function hourSecondsFromHeat(heat: any[]): number[] {
+  const arr = new Array(24).fill(0);
+  for (const c of heat || []) {
+    const h = Number(c.hour ?? 0);
+    const s = Number(c.seconds ?? 0);
+    if (h >= 0 && h < 24) arr[h] += s;
+  }
+  return arr;
+}
+
+function clockLabels(): string[] {
+  return ["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23"];
+}
+
+function formatPeak(arr: number[]): string {
+  if (!arr || arr.length === 0) return "-";
+  let idx = 0;
+  let max = -1;
+  arr.forEach((v, i) => { if (v > max) { max = v; idx = i; } });
+  const hour = idx % 24;
+  const label = `${hour.toString().padStart(2, '0')}:00`;
+  return label;
 }
 
 const tdMono: React.CSSProperties = {
