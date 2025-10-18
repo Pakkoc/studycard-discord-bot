@@ -55,6 +55,7 @@ export type UserEntryLog = {
 };
 
 export type UserDailyPoint = { date: string; hours: number };
+export type UserMonthlyPoint = { month: string; hours: number };
 
 export type HeatmapCell = { dow: number; hour: number; count: number };
 
@@ -352,6 +353,43 @@ export async function fetchUserWeekdayHourHeatmap(
       [guildId.toString(), userId.toString(), start]
     );
     return rows.map((r) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.cnt) }));
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchUserMonthlyTrend(
+  guildId: bigint,
+  userId: bigint,
+  months = 12
+): Promise<UserMonthlyPoint[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    // Start from first day of (months-1) months ago
+    const start = new Date();
+    start.setUTCDate(1);
+    start.setUTCMonth(start.getUTCMonth() - (months - 1));
+    const { rows } = await client.query(
+      `
+      WITH months AS (
+        SELECT generate_series(date_trunc('month', $3::timestamptz), date_trunc('month', $4::timestamptz), interval '1 month') AS m
+      ), agg AS (
+        SELECT date_trunc('month', ended_at) AS m,
+               SUM(duration_seconds) AS seconds
+        FROM voice_sessions
+        WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3 AND ended_at <= $4
+        GROUP BY m
+      )
+      SELECT to_char(months.m, 'YYYY-MM') AS month,
+             COALESCE(agg.seconds, 0) AS seconds
+      FROM months
+      LEFT JOIN agg ON agg.m = months.m
+      ORDER BY months.m
+      `,
+      [guildId.toString(), userId.toString(), start, new Date()]
+    );
+    return rows.map((r) => ({ month: String(r.month), hours: Math.round(((Number(r.seconds || 0) / 3600)) * 100) / 100 }));
   } finally {
     client.release();
   }

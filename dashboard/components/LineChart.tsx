@@ -50,7 +50,7 @@ export default function LineChart({ labels, series }: Props) {
         },
         scales: {
           x: { ticks: { color: "#6b7280" }, grid: { color: "#e5e7eb" } },
-          y: { ticks: { color: "#6b7280" }, grid: { color: "#e5e7eb" } },
+          y: { ticks: { color: "#6b7280" }, grid: { color: "#e5e7eb" }, beginAtZero: true, suggestedMin: 0 },
         },
       },
     });
@@ -59,7 +59,7 @@ export default function LineChart({ labels, series }: Props) {
     };
   }, [labels.join("|"), JSON.stringify(series)]);
 
-  return <canvas ref={ref} style={{ width: "100%", height: 280 }} />;
+  return <canvas ref={ref} style={{ width: "100%", height: 220 }} />;
 }
 
 

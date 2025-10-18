@@ -5,6 +5,7 @@ import {
   fetchUserDetail,
   fetchUserEntryLogs,
   fetchUserDailyTrend,
+  fetchUserMonthlyTrend,
   fetchUserWeekdayHourHeatmap,
   fetchUserCalendarYear,
   fetchUserAvailableYears,
@@ -19,10 +20,11 @@ export default async function UserPage({ params, searchParams }: { params: Param
   const guildId = hasGuild ? BigInt(guildIdFromEnv) : 0n;
   const userIdBig = BigInt(userId);
 
-  const [detail, logs, trend, heat, years] = await Promise.all([
+  const [detail, logs, trend, monthly, heat, years] = await Promise.all([
     fetchUserDetail(guildId, userIdBig),
     fetchUserEntryLogs(guildId, userIdBig, 100),
     fetchUserDailyTrend(guildId, userIdBig, 30),
+    fetchUserMonthlyTrend(guildId, userIdBig, 12),
     fetchUserWeekdayHourHeatmap(guildId, userIdBig, 90),
     fetchUserAvailableYears(guildId, userIdBig),
   ]);
@@ -58,10 +60,10 @@ export default async function UserPage({ params, searchParams }: { params: Param
       </div>
 
       <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="title" style={{ marginBottom: 8 }}>최근 30일 활동 추이</div>
+        <div className="title" style={{ marginBottom: 8 }}>월별 활동 추이</div>
         <LineChart
-          labels={(trend ?? []).map((t: any) => String(t.date).slice(5))}
-          series={[{ label: "Hours", data: (trend ?? []).map((t: any) => Number(t.hours)), color: "#3b82f6" }]}
+          labels={(monthly ?? []).map((t: any) => String(t.month).slice(5))}
+          series={[{ label: "Hours", data: (monthly ?? []).map((t: any) => Number(t.hours)), color: "#3b82f6" }]}
         />
       </div>
 
