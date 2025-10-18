@@ -429,4 +429,26 @@ export async function fetchUserDayHours(
   }
 }
 
+export async function fetchUserAvailableYears(
+  guildId: bigint,
+  userId: bigint
+): Promise<number[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      `
+      SELECT DISTINCT EXTRACT(YEAR FROM ended_at)::int AS year
+      FROM voice_sessions
+      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL
+      ORDER BY year
+      `,
+      [guildId.toString(), userId.toString()]
+    );
+    return rows.map((r) => Number(r.year)).filter((y) => Number.isFinite(y));
+  } finally {
+    client.release();
+  }
+}
+
 

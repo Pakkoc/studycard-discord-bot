@@ -8,6 +8,7 @@ import {
   fetchUserWeekdayHourHeatmap,
   fetchUserCalendarYear,
   fetchUserDayHours,
+  fetchUserAvailableYears,
 } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
   const page = Number(searchParams.get("page") || 1);
   const sort = (searchParams.get("sort") || undefined) as any;
   const order = (searchParams.get("order") || undefined) as any;
-  const scope = searchParams.get("scope") || undefined; // detail | logs | trend | heatmap | calendar | day-hours
+  const scope = searchParams.get("scope") || undefined; // detail | logs | trend | heatmap | calendar | day-hours | years
   const days = Number(searchParams.get("days") || 30);
   const yearParam = searchParams.get("year");
   const dateParam = searchParams.get("date");
@@ -59,6 +60,10 @@ export async function GET(req: NextRequest) {
         if (!dateParam) return new Response(JSON.stringify({ error: "date is required" }), { status: 400 });
         const data = await fetchUserDayHours(BigInt(guildId), userId, dateParam);
         return Response.json({ data, date: dateParam });
+      }
+      if (scope === "years") {
+        const data = await fetchUserAvailableYears(BigInt(guildId), userId);
+        return Response.json({ data });
       }
       return new Response(JSON.stringify({ error: "invalid scope" }), { status: 400 });
     }

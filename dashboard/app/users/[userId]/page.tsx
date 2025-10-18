@@ -7,6 +7,7 @@ import {
   fetchUserDailyTrend,
   fetchUserWeekdayHourHeatmap,
   fetchUserCalendarYear,
+  fetchUserAvailableYears,
 } from "@/lib/stats";
 
 type Params = { userId: string };
@@ -18,17 +19,21 @@ export default async function UserPage({ params, searchParams }: { params: Param
   const guildId = hasGuild ? BigInt(guildIdFromEnv) : 0n;
   const userIdBig = BigInt(userId);
 
-  const [detail, logs, trend, heat] = await Promise.all([
+  const [detail, logs, trend, heat, years] = await Promise.all([
     fetchUserDetail(guildId, userIdBig),
     fetchUserEntryLogs(guildId, userIdBig, 100),
     fetchUserDailyTrend(guildId, userIdBig, 30),
     fetchUserWeekdayHourHeatmap(guildId, userIdBig, 90),
+    fetchUserAvailableYears(guildId, userIdBig),
   ]);
 
   // Year param
   const currentYear = new Date().getFullYear();
   const parsedYear = Number((searchParams?.year as string) || currentYear);
   const calendarYear = Number.isFinite(parsedYear) && parsedYear >= 2000 && parsedYear <= 3000 ? parsedYear : currentYear;
+  const availYears = (years as number[]).length > 0 ? (years as number[]) : [currentYear];
+  // Show only current year and any future years that exist (e.g., 2026 when the year changes)
+  const yearsToShow = Array.from(new Set([currentYear, ...availYears.filter((y) => y >= currentYear)])).sort((a, b) => a - b);
   const calendarDataRes = await fetchUserCalendarYear(guildId, userIdBig, calendarYear);
 
   return (
@@ -61,14 +66,12 @@ export default async function UserPage({ params, searchParams }: { params: Param
       </div>
 
       <div className="panel" style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <div className="title">연간 잔디</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <a className="subtle" href={`?year=${calendarYear - 1}`} style={{ textDecoration: "none", color: "var(--accent)" }}>{calendarYear - 1}년</a>
-            <span className="subtle" style={{ color: "#6b7280" }}>|</span>
-            <a className="subtle" href={`?year=${calendarYear}`} style={{ textDecoration: "none", color: "var(--accent)", fontWeight: 700 }}>{calendarYear}년</a>
-            <span className="subtle" style={{ color: "#6b7280" }}>|</span>
-            <a className="subtle" href={`?year=${calendarYear + 1}`} style={{ textDecoration: "none", color: "var(--accent)" }}>{calendarYear + 1}년</a>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+          <div className="title" style={{ marginTop: 2 }}>연간 잔디</div>
+          <div style={{ display: "grid", gridTemplateRows: "repeat(auto-fit, minmax(0, 1fr))", rowGap: 6 }}>
+            {yearsToShow.map((y) => (
+              <a key={y} href={`?year=${y}`} className="subtle" style={{ textDecoration: "none", color: "var(--accent)", fontWeight: y === calendarYear ? 700 as any : 400 }}>{y}년</a>
+            ))}
           </div>
         </div>
         <ContributionCalendar year={calendarYear} days={calendarDataRes as any} />
