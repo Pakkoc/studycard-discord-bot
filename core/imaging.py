@@ -239,6 +239,7 @@ def render_profile_card(
     subtitle_line1: str | None = None,
     subtitle_line2: str | None = None,
     house_name: str | None = None,
+    voost_visible: bool = True,
 ) -> BytesIO:
     width, height = 800, 360
     theme = _resolve_house_theme(house_name)
@@ -274,56 +275,51 @@ def render_profile_card(
     header_y = 16
     header_bold_strength = 1
     draw_bold_text(draw, header_x, header_y, header_text, title_font, primary, strength=header_bold_strength)
-    # Attach optional voost icon to the right of the header if available
-    try:
-        voost_candidates = [
-            Path("image/voost.png"),
-            Path("image/@voost.png"),
-            Path("assets/voost.png"),
-            Path("assets/@voost.png"),
-            Path("assets/images/voost.png"),
-            Path("assets/images/@voost.png"),
-        ]
-        voost_path = next((p for p in voost_candidates if p.exists()), None)
-        if voost_path is not None:
-            vb = draw.textbbox((header_x, header_y), header_text, font=title_font)
-            text_w = (vb[2] - vb[0]) if vb else int(draw.textlength(header_text, font=title_font))
-            text_h = (vb[3] - vb[1]) if vb else 32
-            icon = Image.open(voost_path).convert("RGBA")
-            # Trim transparent margins for tight visual alignment
-            try:
-                alpha_ch = icon.split()[3]
-                bbox = alpha_ch.getbbox()
-                if bbox:
-                    icon = icon.crop(bbox)
-            except Exception:
-                pass
-            # Match text height closely for balanced look
-            target_h = max(18, int(text_h * 1.00))
-            scale = target_h / float(icon.height)
-            target_w = max(18, int(icon.width * scale))
-            icon = icon.resize((target_w, target_h), Image.LANCZOS)
-            # Compute visual center of bold-rendered header and center icon precisely
-            vis_top = header_y - header_bold_strength
-            vis_bottom = header_y + text_h + header_bold_strength
-            center_y = (vis_top + vis_bottom) / 2.0
-            # Place right next to the text with a tight, consistent gap
-            gap = 4
-            ix = int(round(header_x + text_w + gap))
-            # Nudge slightly downward for optical baseline alignment
-            nudge_y = 13
-            iy = int(round(center_y - target_h / 2.0 + nudge_y))
-            # Subtle glow to improve legibility on varied backgrounds
-            try:
-                glow = Image.new("RGBA", icon.size, (primary[0], primary[1], primary[2], 90))
-                glow.putalpha(icon.split()[3])
-                glow = glow.filter(ImageFilter.GaussianBlur(1.2))
-                img.paste(glow, (ix, iy), glow)
-            except Exception:
-                pass
-            img.paste(icon, (ix, iy), icon)
-    except Exception:
-        pass
+    # Attach optional voost icon only when allowed
+    if voost_visible:
+        try:
+            voost_candidates = [
+                Path("image/voost.png"),
+                Path("image/@voost.png"),
+                Path("assets/voost.png"),
+                Path("assets/@voost.png"),
+                Path("assets/images/voost.png"),
+                Path("assets/images/@voost.png"),
+            ]
+            voost_path = next((p for p in voost_candidates if p.exists()), None)
+            if voost_path is not None:
+                vb = draw.textbbox((header_x, header_y), header_text, font=title_font)
+                text_w = (vb[2] - vb[0]) if vb else int(draw.textlength(header_text, font=title_font))
+                text_h = (vb[3] - vb[1]) if vb else 32
+                icon = Image.open(voost_path).convert("RGBA")
+                try:
+                    alpha_ch = icon.split()[3]
+                    bbox = alpha_ch.getbbox()
+                    if bbox:
+                        icon = icon.crop(bbox)
+                except Exception:
+                    pass
+                target_h = max(18, int(text_h * 1.00))
+                scale = target_h / float(icon.height)
+                target_w = max(18, int(icon.width * scale))
+                icon = icon.resize((target_w, target_h), Image.LANCZOS)
+                vis_top = header_y - header_bold_strength
+                vis_bottom = header_y + text_h + header_bold_strength
+                center_y = (vis_top + vis_bottom) / 2.0
+                gap = 4
+                ix = int(round(header_x + text_w + gap))
+                nudge_y = 13
+                iy = int(round(center_y - target_h / 2.0 + nudge_y))
+                try:
+                    glow = Image.new("RGBA", icon.size, (primary[0], primary[1], primary[2], 90))
+                    glow.putalpha(icon.split()[3])
+                    glow = glow.filter(ImageFilter.GaussianBlur(1.2))
+                    img.paste(glow, (ix, iy), glow)
+                except Exception:
+                    pass
+                img.paste(icon, (ix, iy), icon)
+        except Exception:
+            pass
 
     # Avatar block on the left (rounded square)
     holder_size = 160

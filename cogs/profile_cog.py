@@ -59,6 +59,34 @@ def pick_house_name(member: discord.Member) -> str | None:
     return None
 
 
+def _load_keywords_from_env(var_name: str, default: list[str]) -> list[str]:
+    raw = os.getenv(var_name, "").strip()
+    if not raw:
+        return default
+    kws: list[str] = []
+    for item in raw.split(","):
+        tok = item.strip()
+        if tok:
+            kws.append(tok)
+    return kws
+
+
+# 장학생 배지(voost 아이콘) 노출을 위한 역할명 키워드 (부분일치)
+SCHOLAR_ROLE_KEYWORDS: list[str] = _load_keywords_from_env("SCHOLAR_ROLE_KEYWORDS", ["장학생"])  # 예: "장학생,슈퍼장학생"
+
+
+def has_scholar_role(member: discord.Member) -> bool:
+    try:
+        for role in member.roles:
+            rn = role.name or ""
+            for key in SCHOLAR_ROLE_KEYWORDS:
+                if key and key in rn:
+                    return True
+    except Exception:
+        pass
+    return False
+
+
 def compute_grade_by_join_date(joined_at: datetime | None, now: datetime | None = None) -> int:
     if joined_at is None:
         return 1
@@ -181,6 +209,7 @@ class ProfileCog(commands.Cog):
             subtitle_line1=subtitle_line1,
             subtitle_line2=subtitle_line2,
             house_name=house_name,
+            voost_visible=has_scholar_role(target),
         )
         # Fetch month streak for stats+calendar section
         month = await fetch_month_streak_days(target.id, interaction.guild.id)
@@ -281,6 +310,7 @@ class ProfileCog(commands.Cog):
             subtitle_line1=subtitle_line1,
             subtitle_line2=subtitle_line2,
             house_name=house_name,
+            voost_visible=has_scholar_role(target),
         )
         # Fetch month streak for stats+calendar section
         month = await fetch_month_streak_days(target.id, ctx.guild.id)
