@@ -75,7 +75,7 @@ async def main() -> None:
 
     intents = discord.Intents.default()
     intents.members = True  # needed for member enumerate and join/remove events
-    intents.message_content = False
+    intents.message_content = True
     intents.voice_states = True
 
     bot = commands.Bot(command_prefix="!", intents=intents)
@@ -366,6 +366,9 @@ async def main() -> None:
         # Ignore bot/self
         if message.author.bot:
             return
+        # Ensure prefix commands (e.g., !학생증) are processed even with custom on_message
+        # Without this, commands.command handlers won't run.
+        await bot.process_commands(message)
         # Only handle plain text channels here. Threads (forum posts & replies) are handled separately.
         if not isinstance(message.channel, discord.TextChannel):
             return
