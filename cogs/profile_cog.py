@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import discord
-from discord import app_commands
+# from discord import app_commands
 from discord.ext import commands
 from io import BytesIO
 from datetime import datetime, timezone
@@ -110,9 +110,9 @@ class ProfileCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="profile", description="프로필 카드 보기")
-    @app_commands.guild_only()
-    async def profile(self, interaction: discord.Interaction, member: discord.Member | None = None):
+    # [removed] slash command /profile
+    # @app_commands.guild_only()
+    async def _deprecated_profile(self, interaction: discord.Interaction, member: discord.Member | None = None):
         # Only house leaders may view other users' profiles
         if member is not None and member.id != interaction.user.id:
             if not is_house_leader(interaction.user):
@@ -199,7 +199,7 @@ class ProfileCog(commands.Cog):
         )
         top_img = Image.open(profile_buf)
         bottom_img = Image.open(stats_buf)
-        combined = compose_vertical_images(top_img, bottom_img)
+        combined = compose_vertical_images(top_img, bottom_img, spacing=-24)
 
         file = discord.File(combined, filename="profile.png")
         # Auto-delete after configured seconds (0 disables)
@@ -209,6 +209,106 @@ class ProfileCog(commands.Cog):
         except Exception:
             delete_after = 0
         await interaction.response.send_message(file=file, delete_after=delete_after if delete_after > 0 else None)
+
+
+    @commands.command(name="학생증")
+    @commands.guild_only()
+    async def student_card(self, ctx: commands.Context, member: discord.Member | None = None):
+        # Only house leaders may view others' profiles
+        if member is not None and member.id != ctx.author.id:
+            if not is_house_leader(ctx.author):
+                await ctx.reply("타인의 프로필은 기숙사장만 조회할 수 있습니다.")
+                return
+        target = member or ctx.author
+        # Prefer server nickname if present
+        display_name = target.nick or target.display_name or str(target)
+        stats = await fetch_user_stats(target.id, ctx.guild.id)
+        if not stats:
+            await ctx.reply("데이터가 없습니다. 잠시 후 다시 시도하세요.")
+            return
+
+        level, xp_in_level, level_need, xp_to_next, progress = compute_level_progress(stats["xp"])
+
+        # Try fetching avatar image
+        avatar_bytes = await target.display_avatar.read() if target.display_avatar else None
+        avatar_img = None
+        if avatar_bytes:
+            from PIL import Image
+            from io import BytesIO as _BytesIO
+            avatar_img = Image.open(_BytesIO(avatar_bytes))
+
+        # Prepare subtitles: house + grade, and student number (join date)
+        house_name = pick_house_name(target)
+        if house_name is None:
+            await ctx.reply("기숙사를 먼저 선택해주세요.")
+            return
+        grade = compute_grade_by_join_date(getattr(target, "joined_at", None))
+        subtitle_line1 = f"{house_name} {grade}학년" if house_name else f"{grade}학년"
+        # Prefer DB stored student_no, fallback to computed
+        from core.database import set_user_student_no
+        joined = getattr(target, "joined_at", None)
+        student_no = stats.get("student_no") or ""
+        if not student_no and joined:
+            base = joined.astimezone(timezone.utc).strftime("%y%m%d")
+            same_day = [m for m in ctx.guild.members if m.joined_at and m.joined_at.date() == joined.date() and not m.bot]
+            same_day_sorted = sorted(same_day, key=lambda m: (m.joined_at, m.id))
+            try:
+                idx = next(i for i, m in enumerate(same_day_sorted) if m.id == target.id)
+            except StopIteration:
+                idx = 0
+            suffix = f"{idx + 1:02d}"
+            student_no = f"{base}{suffix}"
+            # Save back to DB for future reads
+            try:
+                await set_user_student_no(target.id, ctx.guild.id, student_no)
+            except Exception:
+                pass
+        subtitle_line2 = f"학번 {student_no}" if student_no else None
+
+        profile_buf: BytesIO = render_profile_card(
+            username=display_name,
+            level=level,
+            xp=stats["xp"],
+            today_seconds=stats["today_seconds"],
+            week_seconds=stats["week_seconds"],
+            month_seconds=stats["month_seconds"],
+            total_seconds=stats["total_seconds"],
+            progress_ratio=progress,
+            xp_in_level=xp_in_level,
+            level_need=level_need,
+            avatar_image=avatar_img,
+            title_text=display_name,
+            subtitle_line1=subtitle_line1,
+            subtitle_line2=subtitle_line2,
+            house_name=house_name,
+        )
+        # Fetch month streak for stats+calendar section
+        month = await fetch_month_streak_days(target.id, ctx.guild.id)
+        from PIL import Image
+        stats_buf: BytesIO = render_stats_and_month_calendar(
+            display_name,
+            stats["today_seconds"],
+            stats["week_seconds"],
+            stats["month_seconds"],
+            stats["total_seconds"],
+            int(month["year"]),
+            int(month["month"]),
+            set(int(d) for d in month["days"]),
+            int(month["today"]) if month["today"] else None,
+            house_name=house_name,
+        )
+        top_img = Image.open(profile_buf)
+        bottom_img = Image.open(stats_buf)
+        combined = compose_vertical_images(top_img, bottom_img, spacing=-5)
+
+        file = discord.File(combined, filename="profile.png")
+        # Auto-delete after configured seconds (0 disables)
+        try:
+            delete_after_raw = os.getenv("BOT_MESSAGE_DELETE_AFTER_SEC", "0").strip()
+            delete_after = int(delete_after_raw) if delete_after_raw.isdigit() else 0
+        except Exception:
+            delete_after = 0
+        await ctx.reply(file=file, delete_after=delete_after if delete_after > 0 else None)
 
 
 async def setup(bot: commands.Bot) -> None:
