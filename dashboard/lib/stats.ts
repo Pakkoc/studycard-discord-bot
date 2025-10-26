@@ -468,6 +468,39 @@ export async function fetchGuildCalendarYear(
   }
 }
 
+// 길드 전체에서 "개인별 하루 총합"의 최대치를 구함 (연간 범위)
+export async function fetchGuildPerUserDailyMaxHours(
+  guildId: bigint,
+  year: number
+): Promise<number> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const start = new Date(Date.UTC(year, 0, 1));
+    const end = new Date(Date.UTC(year + 1, 0, 1));
+    const { rows } = await client.query(
+      `
+      WITH daily AS (
+        SELECT user_id,
+               date_trunc('day', ended_at) AS d,
+               SUM(duration_seconds) AS seconds
+        FROM voice_sessions
+        WHERE guild_id=$1 AND ended_at IS NOT NULL AND ended_at >= $2 AND ended_at < $3
+        GROUP BY user_id, d
+      )
+      SELECT COALESCE(MAX(seconds), 0) AS max_seconds
+      FROM daily
+      `,
+      [guildId.toString(), start, end]
+    );
+    const maxSeconds = Number(rows?.[0]?.max_seconds ?? 0);
+    const hours = Math.round(((maxSeconds / 3600)) * 100) / 100;
+    return hours;
+  } finally {
+    client.release();
+  }
+}
+
 export async function fetchUserDayHours(
   guildId: bigint,
   userId: bigint,
