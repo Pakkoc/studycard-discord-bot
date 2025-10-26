@@ -496,6 +496,77 @@ async def fetch_month_streak_days(user_id: int, guild_id: int, year: int | None 
         return {"year": y, "month": m, "days": days_played, "today": today.day if (today.year==y and today.month==m) else None}
 
 
+async def fetch_user_calendar_year_kst6(user_id: int, guild_id: int, year: int) -> list[dict]:
+    """Return list of {date: 'YYYY-MM-DD', seconds: int, sessions: int} using KST 06:00 day boundary."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        start = datetime(year, 1, 1, tzinfo=timezone.utc)
+        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        rows = await conn.fetch(
+            """
+            WITH bounds AS (
+              SELECT 
+                ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
+                ((date_trunc('day', $4::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
+            ), daily AS (
+              SELECT ((date_trunc('day', (ended_at AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS d,
+                     SUM(duration_seconds) AS seconds,
+                     COUNT(*) AS sessions
+              FROM voice_sessions
+              WHERE guild_id=$2 AND user_id=$1 AND ended_at IS NOT NULL AND ended_at >= (SELECT s FROM bounds) AND ended_at < (SELECT e FROM bounds)
+              GROUP BY d
+            )
+            SELECT to_char(d, 'YYYY-MM-DD') AS date,
+                   COALESCE(seconds, 0) AS seconds,
+                   COALESCE(sessions, 0) AS sessions
+            FROM daily
+            ORDER BY date
+            """,
+            user_id,
+            guild_id,
+            start,
+            end,
+        )
+        out: list[dict] = []
+        for r in rows:
+            out.append({
+                "date": str(r["date"]),
+                "seconds": int(r["seconds"] or 0),
+                "sessions": int(r["sessions"] or 0),
+            })
+        return out
+
+
+async def fetch_guild_per_user_daily_max_hours_kst6(guild_id: int, year: int) -> float:
+    """Return the maximum per-user daily total hours within the given year using KST 06:00 boundary."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        start = datetime(year, 1, 1, tzinfo=timezone.utc)
+        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        row = await conn.fetchrow(
+            """
+            WITH bounds AS (
+              SELECT 
+                ((date_trunc('day', $2::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
+                ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
+            ), daily AS (
+              SELECT user_id,
+                     ((date_trunc('day', (ended_at AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS d,
+                     SUM(duration_seconds) AS seconds
+              FROM voice_sessions
+              WHERE guild_id=$1 AND ended_at IS NOT NULL AND ended_at >= (SELECT s FROM bounds) AND ended_at < (SELECT e FROM bounds)
+              GROUP BY user_id, d
+            )
+            SELECT COALESCE(MAX(seconds), 0) AS max_seconds FROM daily
+            """,
+            guild_id,
+            start,
+            end,
+        )
+        max_seconds = int(row["max_seconds"]) if row and row["max_seconds"] is not None else 0
+        return round((max_seconds / 3600.0), 2)
+
+
 async def finalize_open_sessions(min_duration_seconds: int) -> int:
     """Finalize sessions with NULL ended_at by setting ended_at=NOW() and duration.
 

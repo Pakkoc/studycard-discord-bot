@@ -646,3 +646,107 @@ def render_stats_and_month_calendar(
     out.seek(0)
     return out
 
+
+def render_annual_grass_image(
+    username: str,
+    year: int,
+    days: list[tuple[str, int]],  # (YYYY-MM-DD, seconds)
+    cap_hours: float,
+    title: str | None = None,
+) -> BytesIO:
+    """Render a GitHub-like annual contribution calendar image.
+
+    - Day boundary is assumed already adjusted (e.g., KST+06) in input dates.
+    - Color scale: 0h -> #e5e7eb, then linear gradient blue-100 -> blue-600 by hours/cap.
+    """
+    # Prepare map date -> hours
+    seconds_map: dict[str, int] = {d: int(s) for d, s in days}
+    hours_map: dict[str, float] = {d: round((s / 3600.0), 2) for d, s in seconds_map.items()}
+
+    # Layout constants
+    cell = 14
+    gap = 4
+    left_label_w = 28
+    top_label_h = 22
+    margin = 12
+
+    # Build full date grid aligned to Sunday start
+    import datetime as _dt
+    jan1 = _dt.date(year, 1, 1)
+    jan1_dow = (jan1.weekday() + 1) % 7  # Sunday=0
+    start = jan1 - _dt.timedelta(days=jan1_dow)
+    next_jan = _dt.date(year + 1, 1, 1)
+
+    # Iterate days to build weeks
+    weeks: list[list[str]] = []
+    d = start
+    while d < next_jan or d.weekday() != 6:  # until Sunday after year end
+        iso = d.isoformat()
+        widx = (d - start).days // 7
+        if len(weeks) <= widx:
+            weeks.append([])
+        weeks[widx].append(iso)
+        d += _dt.timedelta(days=1)
+
+    cols = len(weeks)
+    rows = 7
+    width = margin * 2 + left_label_w + cols * cell + (cols - 1) * gap
+    height = margin * 2 + top_label_h + rows * cell + (rows - 1) * gap
+
+    img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Fonts
+    title_font, body_font = _load_fonts(18, 12)
+
+    # Title
+    title_text = title or f"{username} · {year} 연간 잔디"
+    draw.text((margin, margin - 2), title_text, fill=(17, 24, 39, 255), font=title_font)
+
+    # Weekday labels (일, 화, 목, 토만 표기)
+    y_labels = ["일", "", "화", "", "목", "", "토"]
+    for i, lab in enumerate(y_labels):
+        if not lab:
+            continue
+        x = margin + 2
+        y = margin + top_label_h + i * (cell + gap) + (cell - 12) // 2
+        draw.text((x, y), lab, fill=(107, 114, 128, 255), font=body_font)
+
+    # Month labels per column using first day in that week
+    def _month_label(iso: str) -> str:
+        if not iso:
+            return ""
+        d = _dt.date.fromisoformat(iso)
+        return f"{d.month}월" if d.day <= 7 else ""
+
+    for c, w in enumerate(weeks):
+        label = _month_label(w[0] if w else "")
+        if label:
+            lx = margin + left_label_w + c * (cell + gap)
+            ly = margin + 2
+            draw.text((lx, ly), label, fill=(107, 114, 128, 255), font=body_font)
+
+    # Draw cells
+    def _intensity_color(hours: float) -> tuple[int, int, int, int]:
+        if hours <= 0:
+            return (229, 231, 235, 255)  # #e5e7eb
+        t = max(0.0, min(1.0, hours / max(1e-6, cap_hours)))
+        start_rgb = (219, 234, 254)  # blue-100
+        end_rgb = (37, 99, 235)      # blue-600
+        r = int(round(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t))
+        g = int(round(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t))
+        b = int(round(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t))
+        return (r, g, b, 255)
+
+    for c, w in enumerate(weeks):
+        for r, iso in enumerate(w):
+            hours = float(hours_map.get(iso, 0.0))
+            color = _intensity_color(hours)
+            x0 = margin + left_label_w + c * (cell + gap)
+            y0 = margin + top_label_h + r * (cell + gap)
+            draw.rounded_rectangle((x0, y0, x0 + cell, y0 + cell), radius=3, fill=color)
+
+    out = BytesIO()
+    img.save(out, format="PNG")
+    out.seek(0)
+    return out

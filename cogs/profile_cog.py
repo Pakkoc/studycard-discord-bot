@@ -13,6 +13,7 @@ from core.imaging import (
     render_profile_card,
     compose_vertical_images,
     render_stats_and_month_calendar,
+    render_annual_grass_image,
 )
 
 
@@ -339,6 +340,47 @@ class ProfileCog(commands.Cog):
         except Exception:
             delete_after = 0
         await interaction.response.send_message(file=file, delete_after=delete_after if delete_after > 0 else None)
+
+    @app_commands.command(name="잔디", description="연간 잔디(공부 달력)를 이미지로 보여줍니다")
+    @app_commands.guild_only()
+    async def yearly_grass(self, interaction: discord.Interaction, year: int | None = None, member: discord.Member | None = None):
+        # 권한: 타인 조회는 기숙사장만
+        if member is not None and member.id != interaction.user.id:
+            if not is_house_leader(interaction.user):
+                await interaction.response.send_message("타인의 잔디는 기숙사장만 조회할 수 있습니다.", ephemeral=True)
+                return
+        target = member or interaction.user
+        if interaction.guild is None:
+            await interaction.response.send_message("길드 컨텍스트에서만 사용할 수 있습니다.", ephemeral=True)
+            return
+        y = year or datetime.now(timezone.utc).year
+
+        try:
+            from core.database import (
+                fetch_user_calendar_year_kst6,
+                fetch_guild_per_user_daily_max_hours_kst6,
+                ensure_user,
+            )
+            await ensure_user(target.id, interaction.guild.id)
+            # 데이터 조회
+            data = await fetch_user_calendar_year_kst6(target.id, interaction.guild.id, y)
+            # cap: 길드 내 개인-하루 최대 × 0.85
+            base_max = await fetch_guild_per_user_daily_max_hours_kst6(interaction.guild.id, y)
+            cap_hours = max(1.0, round(base_max * 0.85, 2))
+
+            # 이미지 렌더
+            from PIL import Image
+            buf = render_annual_grass_image(
+                username=target.nick or target.display_name or str(target),
+                year=y,
+                days=[(d["date"], int(d["seconds"])) for d in data],
+                cap_hours=cap_hours,
+            )
+            file = discord.File(buf, filename=f"grass_{y}.png")
+            await interaction.response.send_message(file=file)
+        except Exception as exc:
+            await interaction.response.send_message("잔디 이미지를 생성하지 못했습니다. 잠시 후 다시 시도하세요.", ephemeral=True)
+            raise
 
 
 async def setup(bot: commands.Bot) -> None:
