@@ -16,6 +16,18 @@ export default function ContributionCalendar({ year, days, onSelectDate }: Props
     return m;
   }, [days]);
 
+  // Use robust cap: ~95th percentile of daily hours to avoid outlier dominance
+  const maxHours = useMemo(() => {
+    const hs = days
+      .map((d) => Math.round(((d.seconds || 0) / 3600) * 100) / 100)
+      .filter((h) => h > 0)
+      .sort((a, b) => a - b);
+    if (hs.length === 0) return 1;
+    const idx = Math.max(0, Math.floor(hs.length * 0.95) - 1);
+    const p95 = hs[idx] ?? hs[hs.length - 1];
+    return Math.max(p95, 1);
+  }, [days]);
+
   const first = new Date(Date.UTC(year, 0, 1));
   const last = new Date(Date.UTC(year + 1, 0, 1));
   // Align to week start (Sunday) for GitHub-like layout
@@ -55,30 +67,25 @@ export default function ContributionCalendar({ year, days, onSelectDate }: Props
           {weeks.map((w, wi) => (
             <div key={wi} style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4 }}>
               {w.map((iso) => (
-                <Cell key={iso} iso={iso} data={map.get(iso)} onClick={() => onSelectDate?.(iso)} />
+                <Cell key={iso} iso={iso} data={map.get(iso)} maxHours={maxHours} onClick={() => onSelectDate?.(iso)} />
               ))}
             </div>
           ))}
         </div>
       </div>
       {/* Legend vertical (많음 → 적음) */}
-      <div style={{ display: "grid", gridTemplateRows: "auto repeat(6, 14px) auto", rowGap: 6, color: "#6b7280", fontSize: 12 }}>
+      <div style={{ display: "grid", gridTemplateRows: "auto 112px auto", rowGap: 6, color: "#6b7280", fontSize: 12 }}>
         <span style={{ textAlign: "center" }}>많음</span>
-        <LegendBox color="#2563eb" />
-        <LegendBox color="#60a5fa" />
-        <LegendBox color="#93c5fd" />
-        <LegendBox color="#bfdbfe" />
-        <LegendBox color="#dbeafe" />
-        <LegendBox color="#e5e7eb" />
+        <div style={{ width: 12, height: 112, borderRadius: 2, border: "1px solid #e5e7eb", background: "linear-gradient(#2563eb, #dbeafe, #e5e7eb)" }} />
         <span style={{ textAlign: "center" }}>적음</span>
       </div>
     </div>
   );
 }
 
-function Cell({ iso, data, onClick }: { iso: string; data?: CalendarDay; onClick?: () => void }) {
+function Cell({ iso, data, maxHours, onClick }: { iso: string; data?: CalendarDay; maxHours: number; onClick?: () => void }) {
   const hours = Math.round(((data?.seconds || 0) / 3600) * 100) / 100;
-  const color = colorByHours(hours);
+  const color = hours <= 0 ? "#e5e7eb" : intensityColor(Math.max(0, Math.min(1, hours / maxHours)));
   const title = `${iso}\n총 ${hours}시간, ${data?.sessions || 0}세션`;
   const inYear = true; // we include prev/next spillover weeks like GitHub
   return (
@@ -92,15 +99,6 @@ function Cell({ iso, data, onClick }: { iso: string; data?: CalendarDay; onClick
   );
 }
 
-function colorByHours(h: number) {
-  if (h <= 0) return "#e5e7eb";
-  if (h <= 0.5) return "#dbeafe";
-  if (h <= 1) return "#bfdbfe";
-  if (h <= 2) return "#93c5fd";
-  if (h <= 4) return "#60a5fa";
-  return "#2563eb";
-}
-
 function monthLabel(iso?: string) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -111,6 +109,16 @@ function monthLabel(iso?: string) {
 
 function LegendBox({ color }: { color: string }) {
   return <span style={{ width: 12, height: 12, background: color, display: "inline-block", borderRadius: 2, border: "1px solid #e5e7eb" }} />;
+}
+
+function intensityColor(t: number) {
+  const clamped = Math.max(0, Math.min(1, t));
+  const start = { r: 219, g: 234, b: 254 }; // blue-100
+  const end = { r: 37, g: 99, b: 235 }; // blue-600
+  const r = Math.round(start.r + (end.r - start.r) * clamped);
+  const g = Math.round(start.g + (end.g - start.g) * clamped);
+  const b = Math.round(start.b + (end.b - start.b) * clamped);
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 
