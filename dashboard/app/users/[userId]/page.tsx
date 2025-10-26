@@ -11,6 +11,7 @@ import {
   fetchUserWeekdayHourHeatmap,
   fetchUserCalendarYear,
   fetchUserAvailableYears,
+  fetchGuildCalendarYear,
 } from "@/lib/stats";
 
 type Params = { userId: string };
@@ -38,7 +39,14 @@ export default async function UserPage({ params, searchParams }: { params: Param
   const availYears = (years as number[]).length > 0 ? (years as number[]) : [currentYear];
   // Show only current year and any future years that exist (e.g., 2026 when the year changes)
   const yearsToShow = Array.from(new Set([currentYear, ...availYears.filter((y) => y >= currentYear)])).sort((a, b) => a - b);
-  const calendarDataRes = await fetchUserCalendarYear(guildId, userIdBig, calendarYear);
+  const [calendarDataRes, guildCalendar] = await Promise.all([
+    fetchUserCalendarYear(guildId, userIdBig, calendarYear),
+    fetchGuildCalendarYear(guildId, calendarYear),
+  ]);
+  // 상한: 길드 연간 일일 총합의 최대값의 90% (시간 단위)
+  const guildDailyHours = (guildCalendar as any[]).map((d) => Math.round(((Number(d.seconds || 0) / 3600)) * 100) / 100);
+  const maxDaily = guildDailyHours.length > 0 ? Math.max(...guildDailyHours) : 1;
+  const capHours = Math.max(1, Math.round((maxDaily * 0.9) * 100) / 100);
 
   return (
     <main>
@@ -78,7 +86,7 @@ export default async function UserPage({ params, searchParams }: { params: Param
             ))}
           </div>
         </div>
-        <ContributionCalendar year={calendarYear} days={calendarDataRes as any} />
+        <ContributionCalendar year={calendarYear} days={calendarDataRes as any} capHours={capHours} />
       </div>
 
       <div className="panel" style={{ marginBottom: 16 }}>

@@ -61,6 +61,7 @@ export type HeatmapCell = { dow: number; hour: number; count: number; seconds: n
 
 export type CalendarDay = { date: string; seconds: number; sessions: number };
 export type DayHourBin = { hour: number; seconds: number; sessions: number };
+export type GuildCalendarDay = { date: string; seconds: number };
 
 export async function fetchGuildUserStats(
   guildId: bigint,
@@ -428,6 +429,40 @@ export async function fetchUserCalendarYear(
       [guildId.toString(), userId.toString(), start, end]
     );
     return rows.map((r) => ({ date: String(r.date), seconds: Number(r.seconds || 0), sessions: Number(r.sessions || 0) }));
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchGuildCalendarYear(
+  guildId: bigint,
+  year: number
+): Promise<GuildCalendarDay[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const start = new Date(Date.UTC(year, 0, 1));
+    const end = new Date(Date.UTC(year + 1, 0, 1));
+    const { rows } = await client.query(
+      `
+      WITH days AS (
+        SELECT generate_series($2::timestamptz, $3::timestamptz - interval '1 day', interval '1 day') AS d
+      ), daily AS (
+        SELECT date_trunc('day', ended_at) AS d,
+               SUM(duration_seconds) AS seconds
+        FROM voice_sessions
+        WHERE guild_id=$1 AND ended_at IS NOT NULL AND ended_at >= $2 AND ended_at < $3
+        GROUP BY d
+      )
+      SELECT to_char(days.d, 'YYYY-MM-DD') AS date,
+             COALESCE(daily.seconds, 0) AS seconds
+      FROM days
+      LEFT JOIN daily ON daily.d = days.d
+      ORDER BY days.d
+      `,
+      [guildId.toString(), start, end]
+    );
+    return rows.map((r) => ({ date: String(r.date), seconds: Number(r.seconds || 0) }));
   } finally {
     client.release();
   }

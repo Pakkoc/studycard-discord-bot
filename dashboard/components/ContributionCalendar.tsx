@@ -7,9 +7,10 @@ type Props = {
   year: number;
   days: CalendarDay[];
   onSelectDate?: (date: string) => void;
+  capHours?: number; // optional external cap (e.g., guild-wide max * 0.9)
 };
 
-export default function ContributionCalendar({ year, days, onSelectDate }: Props) {
+export default function ContributionCalendar({ year, days, onSelectDate, capHours }: Props) {
   const map = useMemo(() => {
     const m = new Map<string, CalendarDay>();
     for (const d of days) m.set(d.date, d);
@@ -23,10 +24,11 @@ export default function ContributionCalendar({ year, days, onSelectDate }: Props
       .filter((h) => h > 0)
       .sort((a, b) => a - b);
     if (hs.length === 0) return 1;
+    if (capHours && capHours > 0) return capHours;
     const idx = Math.max(0, Math.floor(hs.length * 0.95) - 1);
     const p95 = hs[idx] ?? hs[hs.length - 1];
     return Math.max(p95, 1);
-  }, [days]);
+  }, [days, capHours]);
 
   const first = new Date(Date.UTC(year, 0, 1));
   const last = new Date(Date.UTC(year + 1, 0, 1));
