@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import discord
-# from discord import app_commands
+from discord import app_commands
 from discord.ext import commands
 from io import BytesIO
 from datetime import datetime, timezone
@@ -240,20 +240,20 @@ class ProfileCog(commands.Cog):
         await interaction.response.send_message(file=file, delete_after=delete_after if delete_after > 0 else None)
 
 
-    @commands.command(name="학생증")
-    @commands.guild_only()
-    async def student_card(self, ctx: commands.Context, member: discord.Member | None = None):
+    @app_commands.command(name="학생증", description="학생증 프로필을 생성합니다")
+    @app_commands.guild_only()
+    async def student_card(self, interaction: discord.Interaction, member: discord.Member | None = None):
         # Only house leaders may view others' profiles
-        if member is not None and member.id != ctx.author.id:
-            if not is_house_leader(ctx.author):
-                await ctx.reply("타인의 프로필은 기숙사장만 조회할 수 있습니다.")
+        if member is not None and member.id != interaction.user.id:
+            if not is_house_leader(interaction.user):
+                await interaction.response.send_message("타인의 프로필은 기숙사장만 조회할 수 있습니다.", ephemeral=True)
                 return
-        target = member or ctx.author
+        target = member or interaction.user
         # Prefer server nickname if present
         display_name = target.nick or target.display_name or str(target)
-        stats = await fetch_user_stats(target.id, ctx.guild.id)
+        stats = await fetch_user_stats(target.id, interaction.guild.id)
         if not stats:
-            await ctx.reply("데이터가 없습니다. 잠시 후 다시 시도하세요.")
+            await interaction.response.send_message("데이터가 없습니다. 잠시 후 다시 시도하세요.", ephemeral=True)
             return
 
         level, xp_in_level, level_need, xp_to_next, progress = compute_level_progress(stats["xp"])
@@ -269,7 +269,7 @@ class ProfileCog(commands.Cog):
         # Prepare subtitles: house + grade, and student number (join date)
         house_name = pick_house_name(target)
         if house_name is None:
-            await ctx.reply("기숙사를 먼저 선택해주세요.")
+            await interaction.response.send_message("기숙사를 먼저 선택해주세요.", ephemeral=True)
             return
         grade = compute_grade_by_join_date(getattr(target, "joined_at", None))
         subtitle_line1 = f"{house_name} {grade}학년" if house_name else f"{grade}학년"
@@ -279,7 +279,7 @@ class ProfileCog(commands.Cog):
         student_no = stats.get("student_no") or ""
         if not student_no and joined:
             base = joined.astimezone(timezone.utc).strftime("%y%m%d")
-            same_day = [m for m in ctx.guild.members if m.joined_at and m.joined_at.date() == joined.date() and not m.bot]
+            same_day = [m for m in interaction.guild.members if m.joined_at and m.joined_at.date() == joined.date() and not m.bot]
             same_day_sorted = sorted(same_day, key=lambda m: (m.joined_at, m.id))
             try:
                 idx = next(i for i, m in enumerate(same_day_sorted) if m.id == target.id)
@@ -289,7 +289,7 @@ class ProfileCog(commands.Cog):
             student_no = f"{base}{suffix}"
             # Save back to DB for future reads
             try:
-                await set_user_student_no(target.id, ctx.guild.id, student_no)
+                await set_user_student_no(target.id, interaction.guild.id, student_no)
             except Exception:
                 pass
         subtitle_line2 = f"학번 {student_no}" if student_no else None
@@ -313,7 +313,7 @@ class ProfileCog(commands.Cog):
             voost_visible=has_scholar_role(target),
         )
         # Fetch month streak for stats+calendar section
-        month = await fetch_month_streak_days(target.id, ctx.guild.id)
+        month = await fetch_month_streak_days(target.id, interaction.guild.id)
         from PIL import Image
         stats_buf: BytesIO = render_stats_and_month_calendar(
             display_name,
@@ -338,10 +338,13 @@ class ProfileCog(commands.Cog):
             delete_after = int(delete_after_raw) if delete_after_raw.isdigit() else 0
         except Exception:
             delete_after = 0
-        await ctx.reply(file=file, delete_after=delete_after if delete_after > 0 else None)
+        await interaction.response.send_message(file=file, delete_after=delete_after if delete_after > 0 else None)
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(ProfileCog(bot))
+    cog = ProfileCog(bot)
+    await bot.add_cog(cog)
+    # Register slash command
+    bot.tree.add_command(cog.student_card)
 
 
