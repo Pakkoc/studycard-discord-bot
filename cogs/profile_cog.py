@@ -343,9 +343,7 @@ class ProfileCog(commands.Cog):
 
 async def setup(bot: commands.Bot) -> None:
     cog = ProfileCog(bot)
-    await bot.add_cog(cog)
-    # Register slash command
-    # Ensure command name follows Discord's ASCII requirement and localize to Korean
+    # Ensure command name follows Discord's ASCII requirement and localize to Korean BEFORE adding the cog
     try:
         from discord import Locale as _Locale
         cog.student_card.name = "profile"
@@ -357,6 +355,7 @@ async def setup(bot: commands.Bot) -> None:
             pass
     except Exception:
         pass
-    bot.tree.add_command(cog.student_card)
+    # Adding the cog will auto-register app_commands defined on it; no manual tree.add_command to avoid duplicates
+    await bot.add_cog(cog)
 
 
