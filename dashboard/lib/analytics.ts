@@ -12,9 +12,12 @@ export async function fetchSummaryToday(guildId: bigint): Promise<SummaryToday> 
   try {
     const { rows } = await client.query(
       `
+      WITH kstart AS (
+        SELECT ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s
+      )
       SELECT
-        COALESCE(SUM(CASE WHEN ended_at >= date_trunc('day', now()) THEN duration_seconds END), 0) AS today_seconds,
-        COALESCE(COUNT(DISTINCT CASE WHEN ended_at >= date_trunc('day', now()) THEN user_id END), 0) AS dau
+        COALESCE(SUM(CASE WHEN ended_at >= (SELECT s FROM kstart) THEN duration_seconds END), 0) AS today_seconds,
+        COALESCE(COUNT(DISTINCT CASE WHEN ended_at >= (SELECT s FROM kstart) THEN user_id END), 0) AS dau
       FROM voice_sessions
       WHERE guild_id = $1 AND ended_at IS NOT NULL
       `,

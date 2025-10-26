@@ -319,7 +319,11 @@ async def record_voice_session(
 
             new_level = calculate_level(total_xp)
 
-            streak_day: date = ended_at.astimezone(timezone.utc).date()
+            # 하루 경계: KST 06:00 기준으로 스크릭 일자를 산출한다.
+            # ended_at(UTC)을 Asia/Seoul로 변환한 뒤 -6h 시프트하여 일자를 취하면 06:00 경계를 맞출 수 있다.
+            local = ended_at.astimezone(timezone(timedelta(hours=9)))
+            shifted = local - timedelta(hours=6)
+            streak_day: date = shifted.date()
             await conn.execute(
                 """
                 INSERT INTO daily_streaks (user_id, guild_id, streak_date)

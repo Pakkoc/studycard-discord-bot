@@ -79,6 +79,9 @@ export async function fetchGuildUserStats(
     }
 
     const sql = `
+      WITH kstart AS (
+        SELECT ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s
+      )
       SELECT
         u.user_id,
         u.nickname,
@@ -87,7 +90,7 @@ export async function fetchGuildUserStats(
         u.level_name,
         COALESCE(u.xp, 0) AS xp,
         COALESCE(u.total_seconds, 0) AS total_seconds,
-        COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('day',   now()) THEN vs.duration_seconds END), 0) AS today_seconds,
+        COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT s FROM kstart) THEN vs.duration_seconds END), 0) AS today_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('week',  now()) THEN vs.duration_seconds END), 0) AS week_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('month', now()) THEN vs.duration_seconds END), 0) AS month_seconds,
         to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
@@ -303,7 +306,7 @@ export async function fetchUserDailyTrend(
     start.setDate(start.getDate() - (days - 1));
     const { rows } = await client.query(
       `
-      SELECT date_trunc('day', ended_at) AS d,
+      SELECT ((date_trunc('day', (ended_at AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS d,
              SUM(duration_seconds) AS seconds
       FROM voice_sessions
       WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3
@@ -409,21 +412,25 @@ export async function fetchUserCalendarYear(
     const end = new Date(Date.UTC(year + 1, 0, 1));
     const { rows } = await client.query(
       `
-      WITH days AS (
-        SELECT generate_series($3::timestamptz, $4::timestamptz - interval '1 day', interval '1 day') AS d
+      WITH bounds AS (
+        SELECT 
+          ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
+          ((date_trunc('day', $4::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
+      ), days AS (
+        SELECT generate_series((SELECT s FROM bounds), (SELECT e FROM bounds) - interval '1 day', interval '1 day') AS d
       ), daily AS (
-        SELECT date_trunc('day', ended_at) AS d,
+        SELECT ((date_trunc('day', (ended_at AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS d,
                SUM(duration_seconds) AS seconds,
                COUNT(*) AS sessions
         FROM voice_sessions
-        WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3 AND ended_at < $4
+        WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= (SELECT s FROM bounds) AND ended_at < (SELECT e FROM bounds)
         GROUP BY d
       )
-      SELECT to_char(days.d, 'YYYY-MM-DD') AS date,
+      SELECT to_char(days.d AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS date,
              COALESCE(daily.seconds, 0) AS seconds,
              COALESCE(daily.sessions, 0) AS sessions
       FROM days
-      LEFT JOIN daily ON daily.d = days.d
+      LEFT JOIN daily USING (d)
       ORDER BY days.d
       `,
       [guildId.toString(), userId.toString(), start, end]
@@ -511,11 +518,17 @@ export async function fetchUserDayHours(
   try {
     const { rows } = await client.query(
       `
-      SELECT EXTRACT(HOUR FROM ended_at)::int AS hour,
+      WITH day_bounds AS (
+        SELECT 
+          ((to_timestamp($3, 'YYYY-MM-DD') AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul' AS s,
+          (((to_timestamp($3, 'YYYY-MM-DD') + interval '1 day') AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul' AS e
+      )
+      SELECT EXTRACT(HOUR FROM ended_at AT TIME ZONE 'Asia/Seoul')::int AS hour,
              COALESCE(SUM(duration_seconds), 0) AS seconds,
              COUNT(*) AS sessions
       FROM voice_sessions
-      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND to_char(ended_at, 'YYYY-MM-DD') = $3
+      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL
+        AND ended_at >= (SELECT s FROM day_bounds) AND ended_at < (SELECT e FROM day_bounds)
       GROUP BY hour
       ORDER BY hour
       `,
