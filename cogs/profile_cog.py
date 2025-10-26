@@ -240,7 +240,7 @@ class ProfileCog(commands.Cog):
         await interaction.response.send_message(file=file, delete_after=delete_after if delete_after > 0 else None)
 
 
-    @app_commands.command(name="학생증", description="학생증 프로필을 생성합니다")
+    @app_commands.command(name="profile", description="학생증 프로필을 생성합니다")
     @app_commands.guild_only()
     async def student_card(self, interaction: discord.Interaction, member: discord.Member | None = None):
         # Only house leaders may view others' profiles
@@ -345,6 +345,18 @@ async def setup(bot: commands.Bot) -> None:
     cog = ProfileCog(bot)
     await bot.add_cog(cog)
     # Register slash command
+    # Ensure command name follows Discord's ASCII requirement and localize to Korean
+    try:
+        from discord import Locale as _Locale
+        cog.student_card.name = "profile"
+        try:
+            # Optional localization (shown when client language is Korean)
+            cog.student_card.name_localizations = { _Locale.korean: "학생증" }  # type: ignore[attr-defined]
+            cog.student_card.description_localizations = { _Locale.korean: "학생증 프로필을 생성합니다" }  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    except Exception:
+        pass
     bot.tree.add_command(cog.student_card)
 
 
