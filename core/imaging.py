@@ -421,19 +421,14 @@ def render_profile_card(
     t_w = draw.textlength(prog_text, font=xp_font_small)
     t_bbox = draw.textbbox((0, 0), prog_text, font=xp_font_small)
     t_h = (t_bbox[3] - t_bbox[1]) if t_bbox else 14
-    placed = False
-    if progress_ratio >= 0.4 and xfill_w >= t_w + 12:
-        tx = max(bar_x + 8, min(bar_x + xfill_w - t_w - 8, bar_x + bar_w - t_w - 8))
-        ty = bar_y + (bar_h - t_h) // 2
+    placed = False  # do not place progress text inside the bar; render outside only
+    # Always render outside the bar: prefer right side; otherwise below (original position)
+    # Try to place to the right of the bar; clamp within canvas
+    tx = min(width - margin - t_w, bar_x + bar_w + 8)
+    ty = bar_y + (bar_h - t_h) // 2
+    if tx > bar_x + bar_w + 2:
         draw.text((tx, ty), prog_text, fill=text, font=xp_font_small)
         placed = True
-    if not placed:
-        # Try to place to the right of the bar; clamp within canvas
-        tx = min(width - margin - t_w, bar_x + bar_w + 8)
-        ty = bar_y + (bar_h - t_h) // 2
-        if tx > bar_x + bar_w + 2:
-            draw.text((tx, ty), prog_text, fill=text, font=xp_font_small)
-            placed = True
     if not placed:
         # Fallback: below the bar (original position)
         draw.text((bar_x + bar_w - t_w, bar_y + bar_h + under_gap), prog_text, fill=text, font=xp_font_small)
