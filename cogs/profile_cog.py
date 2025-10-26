@@ -240,7 +240,7 @@ class ProfileCog(commands.Cog):
         await interaction.response.send_message(file=file, delete_after=delete_after if delete_after > 0 else None)
 
 
-    @app_commands.command(name="profile", description="학생증 프로필을 생성합니다")
+    @app_commands.command(name="학생증", description="학생증 프로필을 생성합니다")
     @app_commands.guild_only()
     async def student_card(self, interaction: discord.Interaction, member: discord.Member | None = None):
         # Only house leaders may view others' profiles
@@ -343,18 +343,6 @@ class ProfileCog(commands.Cog):
 
 async def setup(bot: commands.Bot) -> None:
     cog = ProfileCog(bot)
-    # Ensure command name follows Discord's ASCII requirement and localize to Korean BEFORE adding the cog
-    try:
-        from discord import Locale as _Locale
-        cog.student_card.name = "profile"
-        try:
-            # Optional localization (shown when client language is Korean)
-            cog.student_card.name_localizations = { _Locale.korean: "학생증" }  # type: ignore[attr-defined]
-            cog.student_card.description_localizations = { _Locale.korean: "학생증 프로필을 생성합니다" }  # type: ignore[attr-defined]
-        except Exception:
-            pass
-    except Exception:
-        pass
     # Adding the cog will auto-register app_commands defined on it; no manual tree.add_command to avoid duplicates
     await bot.add_cog(cog)
 
