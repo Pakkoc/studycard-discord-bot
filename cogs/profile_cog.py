@@ -370,11 +370,13 @@ class ProfileCog(commands.Cog):
 
             # 이미지 렌더
             from PIL import Image
+            house_name = pick_house_name(target)
             buf = render_annual_grass_image(
                 username=target.nick or target.display_name or str(target),
                 year=y,
                 days=[(d["date"], int(d["seconds"])) for d in data],
                 cap_hours=cap_hours,
+                house_name=house_name,
             )
             file = discord.File(buf, filename=f"grass_{y}.png")
             await interaction.response.send_message(file=file)

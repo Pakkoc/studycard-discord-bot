@@ -653,6 +653,7 @@ def render_annual_grass_image(
     days: list[tuple[str, int]],  # (YYYY-MM-DD, seconds)
     cap_hours: float,
     title: str | None = None,
+    house_name: str | None = None,
 ) -> BytesIO:
     """Render a GitHub-like annual contribution calendar image.
 
@@ -667,8 +668,9 @@ def render_annual_grass_image(
     cell = 14
     gap = 4
     left_label_w = 28
-    top_label_h = 22
-    margin = 12
+    header_h = 44  # dedicated header to avoid overlap with grid
+    outer_margin = 12
+    panel_pad = 18
 
     # Build full date grid aligned to Sunday start
     import datetime as _dt
@@ -690,26 +692,45 @@ def render_annual_grass_image(
 
     cols = len(weeks)
     rows = 7
-    width = margin * 2 + left_label_w + cols * cell + (cols - 1) * gap
-    height = margin * 2 + top_label_h + rows * cell + (rows - 1) * gap
+    grid_w = cols * cell + (cols - 1) * gap
+    grid_h = rows * cell + (rows - 1) * gap
+    width = outer_margin * 2 + panel_pad * 2 + left_label_w + grid_w
+    height = outer_margin * 2 + panel_pad * 2 + header_h + grid_h
 
-    img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+    # Themed card background
+    theme = _resolve_house_theme(house_name)
+    bg = theme["background"]
+    card_bg = theme["card"]
+    outline = theme["outline"]
+    text_color = theme["text"]
+
+    img = Image.new("RGBA", (width, height), bg)
+    draw = ImageDraw.Draw(img)
+
+    # Card container
+    panel_rect = (outer_margin, outer_margin, width - outer_margin, height - outer_margin)
+    g = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    gdraw = ImageDraw.Draw(g)
+    gdraw.rounded_rectangle(panel_rect, radius=20, fill=card_bg, outline=outline, width=2)
+    img = Image.alpha_composite(img, g)
     draw = ImageDraw.Draw(img)
 
     # Fonts
     title_font, body_font = _load_fonts(18, 12)
 
-    # Title
+    # Title (inside card header)
     title_text = title or f"{username} · {year} 연간 잔디"
-    draw.text((margin, margin - 2), title_text, fill=(17, 24, 39, 255), font=title_font)
+    header_x = outer_margin + panel_pad
+    header_y = outer_margin + panel_pad - 2
+    draw.text((header_x, header_y), title_text, fill=text_color, font=title_font)
 
     # Weekday labels (일, 화, 목, 토만 표기)
     y_labels = ["일", "", "화", "", "목", "", "토"]
     for i, lab in enumerate(y_labels):
         if not lab:
             continue
-        x = margin + 2
-        y = margin + top_label_h + i * (cell + gap) + (cell - 12) // 2
+        x = outer_margin + panel_pad + 2
+        y = outer_margin + panel_pad + header_h + i * (cell + gap) + (cell - 12) // 2
         draw.text((x, y), lab, fill=(107, 114, 128, 255), font=body_font)
 
     # Month labels per column using first day in that week
@@ -722,8 +743,8 @@ def render_annual_grass_image(
     for c, w in enumerate(weeks):
         label = _month_label(w[0] if w else "")
         if label:
-            lx = margin + left_label_w + c * (cell + gap)
-            ly = margin + 2
+            lx = outer_margin + panel_pad + left_label_w + c * (cell + gap)
+            ly = outer_margin + panel_pad + 2
             draw.text((lx, ly), label, fill=(107, 114, 128, 255), font=body_font)
 
     # Draw cells
@@ -742,8 +763,8 @@ def render_annual_grass_image(
         for r, iso in enumerate(w):
             hours = float(hours_map.get(iso, 0.0))
             color = _intensity_color(hours)
-            x0 = margin + left_label_w + c * (cell + gap)
-            y0 = margin + top_label_h + r * (cell + gap)
+            x0 = outer_margin + panel_pad + left_label_w + c * (cell + gap)
+            y0 = outer_margin + panel_pad + header_h + r * (cell + gap)
             draw.rounded_rectangle((x0, y0, x0 + cell, y0 + cell), radius=3, fill=color)
 
     out = BytesIO()
