@@ -654,6 +654,7 @@ def render_annual_grass_image(
     cap_hours: float,
     title: str | None = None,
     house_name: str | None = None,
+    avatar_image: Image.Image | None = None,
 ) -> BytesIO:
     """Render a GitHub-like annual contribution calendar image.
 
@@ -668,7 +669,6 @@ def render_annual_grass_image(
     cell = 14
     gap = 4
     left_label_w = 28
-    header_h = 44  # dedicated header to avoid overlap with grid
     outer_margin = 12
     panel_pad = 18
 
@@ -694,6 +694,22 @@ def render_annual_grass_image(
     rows = 7
     grid_w = cols * cell + (cols - 1) * gap
     grid_h = rows * cell + (rows - 1) * gap
+
+    # Fonts (load early to size header dynamically)
+    title_font, body_font = _load_fonts(18, 12)
+    # Title text to measure header height
+    title_text = title or f"{username} · {year} 연간 잔디"
+    # Measure title height safely (fallback to font size on error)
+    try:
+        _tmp = Image.new("RGB", (1, 1))
+        _tdraw = ImageDraw.Draw(_tmp)
+        tb = _tdraw.textbbox((0, 0), title_text, font=title_font)
+        title_h = max(0, (tb[3] - tb[1])) if tb else 18
+    except Exception:
+        title_h = 18
+    # Dynamic header height with breathing room
+    header_h = max(44, title_h + 14)
+
     width = outer_margin * 2 + panel_pad * 2 + left_label_w + grid_w
     height = outer_margin * 2 + panel_pad * 2 + header_h + grid_h
 
@@ -703,6 +719,10 @@ def render_annual_grass_image(
     card_bg = theme["card"]
     outline = theme["outline"]
     text_color = theme["text"]
+    # Derive subtle cell border colors from card background for consistent contrast
+    card_rgb = (card_bg[0], card_bg[1], card_bg[2])
+    cell_border_rgb = _mix_rgb(card_rgb, (0, 0, 0), 0.12)
+    empty_border_rgb = _mix_rgb(card_rgb, (0, 0, 0), 0.18)
 
     img = Image.new("RGBA", (width, height), bg)
     draw = ImageDraw.Draw(img)
@@ -715,14 +735,37 @@ def render_annual_grass_image(
     img = Image.alpha_composite(img, g)
     draw = ImageDraw.Draw(img)
 
-    # Fonts
-    title_font, body_font = _load_fonts(18, 12)
-
-    # Title (inside card header)
-    title_text = title or f"{username} · {year} 연간 잔디"
-    header_x = outer_margin + panel_pad
-    header_y = outer_margin + panel_pad - 2
-    draw.text((header_x, header_y), title_text, fill=text_color, font=title_font)
+    # Title (inside card header) with small avatar aligned to text height
+    # 프로필 이미지 + 제목 위치 조정
+    header_x = outer_margin + panel_pad + 20  # Move title and avatar 20px to the right
+    header_y = outer_margin + panel_pad - 12  # Move title and avatar 10px up
+    text_h_for_icon = title_h  # measured earlier
+    icon_gap = 6
+    header_x_text = header_x
+    if avatar_image is not None:
+        try:
+            icon = avatar_image.convert("RGBA")
+            # icon size proportional to text height, visually small
+            target_h = max(16, min(28, int(round(text_h_for_icon * 0.9))))
+            target_w = target_h
+            if icon.height != target_h or icon.width != target_w:
+                icon = icon.resize((target_w, target_h), Image.LANCZOS)
+            # circular mask
+            mask = Image.new("L", (target_w, target_h), 0)
+            mdraw = ImageDraw.Draw(mask)
+            mdraw.ellipse((0, 0, target_w, target_h), fill=255)
+            # y to align with text baseline (lower than center)
+            iy = int(round(header_y + text_h_for_icon - target_h + 3))
+            ix = header_x
+            img.paste(icon, (ix, iy), mask)
+            # subtle border for clarity on light backgrounds
+            bdraw = ImageDraw.Draw(img)
+            bcolor = (*_mix_rgb((card_bg[0], card_bg[1], card_bg[2]), (0, 0, 0), 0.18), 255)
+            bdraw.ellipse((ix, iy, ix + target_w, iy + target_h), outline=bcolor, width=1)
+            header_x_text = header_x + target_w + icon_gap
+        except Exception:
+            header_x_text = header_x
+    draw.text((header_x_text, header_y), title_text, fill=text_color, font=title_font)
 
     # Weekday labels (일, 화, 목, 토만 표기)
     y_labels = ["일", "", "화", "", "목", "", "토"]
@@ -740,12 +783,13 @@ def render_annual_grass_image(
         d = _dt.date.fromisoformat(iso)
         return f"{d.month}월" if d.day <= 7 else ""
 
+    # Place month labels near the bottom of the header area to avoid title overlap
+    month_label_y = outer_margin + panel_pad + header_h - 18  # approx. body font height
     for c, w in enumerate(weeks):
         label = _month_label(w[0] if w else "")
         if label:
             lx = outer_margin + panel_pad + left_label_w + c * (cell + gap)
-            ly = outer_margin + panel_pad + 2
-            draw.text((lx, ly), label, fill=(107, 114, 128, 255), font=body_font)
+            draw.text((lx, month_label_y), label, fill=(107, 114, 128, 255), font=body_font)
 
     # Draw cells
     def _intensity_color(hours: float) -> tuple[int, int, int, int]:
@@ -763,9 +807,11 @@ def render_annual_grass_image(
         for r, iso in enumerate(w):
             hours = float(hours_map.get(iso, 0.0))
             color = _intensity_color(hours)
+            # Stronger border when empty to make blanks clearly visible
+            border = (* (empty_border_rgb if hours <= 0.0 else cell_border_rgb), 255)
             x0 = outer_margin + panel_pad + left_label_w + c * (cell + gap)
             y0 = outer_margin + panel_pad + header_h + r * (cell + gap)
-            draw.rounded_rectangle((x0, y0, x0 + cell, y0 + cell), radius=3, fill=color)
+            draw.rounded_rectangle((x0, y0, x0 + cell, y0 + cell), radius=3, fill=color, outline=border, width=1)
 
     out = BytesIO()
     img.save(out, format="PNG")

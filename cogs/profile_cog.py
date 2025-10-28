@@ -361,6 +361,10 @@ class ProfileCog(commands.Cog):
                 fetch_guild_per_user_daily_max_hours_kst6,
                 ensure_user,
             )
+            # Prepare small avatar for title icon
+            from PIL import Image
+            avatar_bytes = await target.display_avatar.read() if getattr(target, "display_avatar", None) else None
+            avatar_img = Image.open(BytesIO(avatar_bytes)).convert("RGBA") if avatar_bytes else None
             await ensure_user(target.id, interaction.guild.id)
             # 데이터 조회
             data = await fetch_user_calendar_year_kst6(target.id, interaction.guild.id, y)
@@ -369,7 +373,6 @@ class ProfileCog(commands.Cog):
             cap_hours = max(1.0, round(base_max * 0.85, 2))
 
             # 이미지 렌더
-            from PIL import Image
             house_name = pick_house_name(target)
             buf = render_annual_grass_image(
                 username=target.nick or target.display_name or str(target),
@@ -377,6 +380,7 @@ class ProfileCog(commands.Cog):
                 days=[(d["date"], int(d["seconds"])) for d in data],
                 cap_hours=cap_hours,
                 house_name=house_name,
+                avatar_image=avatar_img,
             )
             file = discord.File(buf, filename=f"grass_{y}.png")
             await interaction.response.send_message(file=file)

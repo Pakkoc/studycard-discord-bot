@@ -96,7 +96,16 @@ function Cell({ iso, data, maxHours, onClick }: { iso: string; data?: CalendarDa
       title={title}
       onClick={onClick}
       aria-label={title}
-      style={{ width: 14, height: 14, borderRadius: 3, background: color, cursor: "pointer", opacity: inYear ? 1 : 0.35 }}
+      style={{
+        width: 14,
+        height: 14,
+        borderRadius: 3,
+        background: color,
+        // Make blanks and light tones visible across themes
+        boxShadow: "inset 0 0 0 1px #d1d5db",
+        cursor: "pointer",
+        opacity: inYear ? 1 : 0.35,
+      }}
     />
   );
 }
