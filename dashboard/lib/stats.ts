@@ -451,7 +451,7 @@ export async function fetchUserCalendarYear(
       ), daily_agg AS (
         SELECT 
           d,
-          SUM(seconds) AS seconds,
+          SUM(seconds)::bigint AS seconds,
           COUNT(DISTINCT session_id) AS sessions
         FROM daily_split
         WHERE seconds > 0
@@ -469,6 +469,10 @@ export async function fetchUserCalendarYear(
       [guildId.toString(), userId.toString(), start, end]
     );
     return rows.map((r) => ({ date: String(r.date), seconds: Number(r.seconds || 0), sessions: Number(r.sessions || 0) }));
+  } catch (error) {
+    console.error('Error in fetchUserCalendarYear:', error);
+    // Return empty array instead of throwing to prevent UI crash
+    return [];
   } finally {
     client.release();
   }
@@ -562,7 +566,7 @@ export async function fetchGuildPerUserDailyMaxHours(
       ), daily AS (
         SELECT user_id,
                d,
-               SUM(seconds) AS seconds
+               SUM(seconds)::bigint AS seconds
         FROM daily_split
         WHERE seconds > 0
         GROUP BY user_id, d
@@ -575,6 +579,10 @@ export async function fetchGuildPerUserDailyMaxHours(
     const maxSeconds = Number(rows?.[0]?.max_seconds ?? 0);
     const hours = Math.round(((maxSeconds / 3600)) * 100) / 100;
     return hours;
+  } catch (error) {
+    console.error('Error in fetchGuildPerUserDailyMaxHours:', error);
+    // Return 0 instead of throwing to prevent UI crash
+    return 0;
   } finally {
     client.release();
   }
