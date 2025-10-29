@@ -232,13 +232,7 @@ class ProfileCog(commands.Cog):
         combined = compose_vertical_images(top_img, bottom_img, spacing=-24)
 
         file = discord.File(combined, filename="profile.png")
-        # Auto-delete after configured seconds (0 disables)
-        try:
-            delete_after_raw = os.getenv("BOT_MESSAGE_DELETE_AFTER_SEC", "0").strip()
-            delete_after = int(delete_after_raw) if delete_after_raw.isdigit() else 0
-        except Exception:
-            delete_after = 0
-        await interaction.response.send_message(file=file, delete_after=delete_after if delete_after > 0 else None)
+        await interaction.response.send_message(file=file, ephemeral=True)
 
 
     @app_commands.command(name="학생증", description="학생증 프로필을 생성합니다")
@@ -333,13 +327,7 @@ class ProfileCog(commands.Cog):
         combined = compose_vertical_images(top_img, bottom_img, spacing=-5)
 
         file = discord.File(combined, filename="profile.png")
-        # Auto-delete after configured seconds (0 disables)
-        try:
-            delete_after_raw = os.getenv("BOT_MESSAGE_DELETE_AFTER_SEC", "0").strip()
-            delete_after = int(delete_after_raw) if delete_after_raw.isdigit() else 0
-        except Exception:
-            delete_after = 0
-        await interaction.response.send_message(file=file, delete_after=delete_after if delete_after > 0 else None)
+        await interaction.response.send_message(file=file, ephemeral=True)
 
     @app_commands.command(name="잔디", description="연간 잔디(공부 달력)를 이미지로 보여줍니다")
     @app_commands.guild_only()
@@ -383,7 +371,7 @@ class ProfileCog(commands.Cog):
                 avatar_image=avatar_img,
             )
             file = discord.File(buf, filename=f"grass_{y}.png")
-            await interaction.response.send_message(file=file)
+            await interaction.response.send_message(file=file, ephemeral=True)
         except Exception as exc:
             await interaction.response.send_message("잔디 이미지를 생성하지 못했습니다. 잠시 후 다시 시도하세요.", ephemeral=True)
             raise

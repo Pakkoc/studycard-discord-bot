@@ -794,10 +794,11 @@ def render_annual_grass_image(
     # Draw cells
     def _intensity_color(hours: float) -> tuple[int, int, int, int]:
         if hours <= 0:
-            return (229, 231, 235, 255)  # #e5e7eb
+            return (229, 231, 235, 255)  # #e5e7eb (empty cells - light gray)
         t = max(0.0, min(1.0, hours / max(1e-6, cap_hours)))
-        start_rgb = (219, 234, 254)  # blue-100
-        end_rgb = (37, 99, 235)      # blue-600
+        # Green gradient: light green -> dark green (#216e39)
+        start_rgb = (240, 253, 244)  # green-50 (very light green)
+        end_rgb = (33, 110, 57)      # #216e39 (dark green)
         r = int(round(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t))
         g = int(round(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t))
         b = int(round(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t))
