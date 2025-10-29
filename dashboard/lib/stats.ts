@@ -414,8 +414,9 @@ export async function fetchUserCalendarYear(
       `
       WITH bounds AS (
         SELECT 
-          ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
-          ((date_trunc('day', $4::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
+          -- Use timestamp without time zone in KST to align with daily_agg.d type
+          (date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AS s,
+          (date_trunc('day', $4::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AS e
       ), sessions_kst AS (
         SELECT 
           started_at AT TIME ZONE 'Asia/Seoul' AS start_kst,
@@ -459,7 +460,7 @@ export async function fetchUserCalendarYear(
       ), days AS (
         SELECT generate_series((SELECT s FROM bounds), (SELECT e FROM bounds) - interval '1 day', interval '1 day') AS d
       )
-      SELECT to_char(days.d AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS date,
+      SELECT to_char(days.d, 'YYYY-MM-DD') AS date,
              COALESCE(daily_agg.seconds, 0) AS seconds,
              COALESCE(daily_agg.sessions, 0) AS sessions
       FROM days
