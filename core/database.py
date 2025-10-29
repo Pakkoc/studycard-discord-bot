@@ -497,7 +497,10 @@ async def fetch_month_streak_days(user_id: int, guild_id: int, year: int | None 
 
 
 async def fetch_user_calendar_year_kst6(user_id: int, guild_id: int, year: int) -> list[dict]:
-    """Return list of {date: 'YYYY-MM-DD', seconds: int, sessions: int} using KST 06:00 day boundary."""
+    """Return list of {date: 'YYYY-MM-DD', seconds: int, sessions: int} using KST 06:00 day boundary.
+    
+    Sessions spanning multiple days are split by date boundary (06:00 KST).
+    """
     pool = await get_pool()
     async with pool.acquire() as conn:
         start = datetime(year, 1, 1, tzinfo=timezone.utc)
@@ -508,18 +511,53 @@ async def fetch_user_calendar_year_kst6(user_id: int, guild_id: int, year: int) 
               SELECT 
                 ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
                 ((date_trunc('day', $4::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
-            ), daily AS (
-              SELECT ((date_trunc('day', (ended_at AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS d,
-                     SUM(duration_seconds) AS seconds,
-                     COUNT(*) AS sessions
+            ), sessions_kst AS (
+              SELECT 
+                started_at AT TIME ZONE 'Asia/Seoul' AS start_kst,
+                ended_at AT TIME ZONE 'Asia/Seoul' AS end_kst,
+                session_id
               FROM voice_sessions
-              WHERE guild_id=$2 AND user_id=$1 AND ended_at IS NOT NULL AND ended_at >= (SELECT s FROM bounds) AND ended_at < (SELECT e FROM bounds)
+              WHERE guild_id=$2 AND user_id=$1 
+                AND ended_at IS NOT NULL 
+                AND ended_at >= (SELECT s FROM bounds) 
+                AND started_at < (SELECT e FROM bounds)
+            ), split_by_date AS (
+              SELECT 
+                session_id,
+                -- Calculate date boundary for this session (06:00 KST)
+                ((date_trunc('day', start_kst - interval '6 hour') + interval '6 hour')) AS day_start,
+                -- Calculate which dates this session spans
+                generate_series(
+                  (date_trunc('day', start_kst - interval '6 hour') + interval '6 hour'),
+                  (date_trunc('day', end_kst - interval '6 hour') + interval '6 hour'),
+                  interval '1 day'
+                ) AS date_boundary
+              FROM sessions_kst
+            ), daily_split AS (
+              SELECT 
+                sd.session_id,
+                sd.date_boundary AS d,
+                -- Calculate seconds for this date portion: intersection of session time and date boundary
+                EXTRACT(EPOCH FROM (
+                  LEAST(sk.end_kst, sd.date_boundary + interval '1 day') - 
+                  GREATEST(sk.start_kst, sd.date_boundary)
+                ))::bigint AS seconds
+              FROM split_by_date sd
+              JOIN sessions_kst sk ON sd.session_id = sk.session_id
+              WHERE sk.end_kst > sd.date_boundary AND sk.start_kst < sd.date_boundary + interval '1 day'
+            ), daily_agg AS (
+              SELECT 
+                d,
+                SUM(seconds)::bigint AS seconds,
+                COUNT(DISTINCT session_id) AS sessions
+              FROM daily_split
+              WHERE seconds > 0
               GROUP BY d
             )
             SELECT to_char(d, 'YYYY-MM-DD') AS date,
                    COALESCE(seconds, 0) AS seconds,
                    COALESCE(sessions, 0) AS sessions
-            FROM daily
+            FROM daily_agg
             ORDER BY date
             """,
             user_id,
@@ -538,7 +576,10 @@ async def fetch_user_calendar_year_kst6(user_id: int, guild_id: int, year: int) 
 
 
 async def fetch_guild_per_user_daily_max_hours_kst6(guild_id: int, year: int) -> float:
-    """Return the maximum per-user daily total hours within the given year using KST 06:00 boundary."""
+    """Return the maximum per-user daily total hours within the given year using KST 06:00 boundary.
+    
+    Sessions spanning multiple days are split by date boundary (06:00 KST).
+    """
     pool = await get_pool()
     async with pool.acquire() as conn:
         start = datetime(year, 1, 1, tzinfo=timezone.utc)
@@ -549,12 +590,46 @@ async def fetch_guild_per_user_daily_max_hours_kst6(guild_id: int, year: int) ->
               SELECT 
                 ((date_trunc('day', $2::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
                 ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
+            ), sessions_kst AS (
+              SELECT 
+                user_id,
+                started_at AT TIME ZONE 'Asia/Seoul' AS start_kst,
+                ended_at AT TIME ZONE 'Asia/Seoul' AS end_kst,
+                session_id
+              FROM voice_sessions
+              WHERE guild_id=$1 
+                AND ended_at IS NOT NULL 
+                AND ended_at >= (SELECT s FROM bounds) 
+                AND started_at < (SELECT e FROM bounds)
+            ), split_by_date AS (
+              SELECT 
+                user_id,
+                session_id,
+                -- Calculate which dates this session spans
+                generate_series(
+                  (date_trunc('day', start_kst - interval '6 hour') + interval '6 hour'),
+                  (date_trunc('day', end_kst - interval '6 hour') + interval '6 hour'),
+                  interval '1 day'
+                ) AS date_boundary
+              FROM sessions_kst
+            ), daily_split AS (
+              SELECT 
+                sd.user_id,
+                sd.date_boundary AS d,
+                -- Calculate seconds for this date portion: intersection of session time and date boundary
+                EXTRACT(EPOCH FROM (
+                  LEAST(sk.end_kst, sd.date_boundary + interval '1 day') - 
+                  GREATEST(sk.start_kst, sd.date_boundary)
+                ))::bigint AS seconds
+              FROM split_by_date sd
+              JOIN sessions_kst sk ON sd.session_id = sk.session_id AND sd.user_id = sk.user_id
+              WHERE sk.end_kst > sd.date_boundary AND sk.start_kst < sd.date_boundary + interval '1 day'
             ), daily AS (
               SELECT user_id,
-                     ((date_trunc('day', (ended_at AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS d,
-                     SUM(duration_seconds) AS seconds
-              FROM voice_sessions
-              WHERE guild_id=$1 AND ended_at IS NOT NULL AND ended_at >= (SELECT s FROM bounds) AND ended_at < (SELECT e FROM bounds)
+                     d,
+                     SUM(seconds) AS seconds
+              FROM daily_split
+              WHERE seconds > 0
               GROUP BY user_id, d
             )
             SELECT COALESCE(MAX(seconds), 0) AS max_seconds FROM daily
