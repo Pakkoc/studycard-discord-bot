@@ -416,21 +416,54 @@ export async function fetchUserCalendarYear(
         SELECT 
           ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
           ((date_trunc('day', $4::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
+      ), sessions_kst AS (
+        SELECT 
+          started_at AT TIME ZONE 'Asia/Seoul' AS start_kst,
+          ended_at AT TIME ZONE 'Asia/Seoul' AS end_kst,
+          session_id
+        FROM voice_sessions
+        WHERE guild_id=$1 AND user_id=$2 
+          AND ended_at IS NOT NULL 
+          AND ended_at >= (SELECT s FROM bounds) 
+          AND started_at < (SELECT e FROM bounds)
+      ), split_by_date AS (
+        SELECT 
+          session_id,
+          -- Calculate which dates this session spans
+          generate_series(
+            (date_trunc('day', start_kst - interval '6 hour') + interval '6 hour'),
+            (date_trunc('day', end_kst - interval '6 hour') + interval '6 hour'),
+            interval '1 day'
+          ) AS date_boundary
+        FROM sessions_kst
+      ), daily_split AS (
+        SELECT 
+          sd.session_id,
+          sd.date_boundary AS d,
+          -- Calculate seconds for this date portion: intersection of session time and date boundary
+          EXTRACT(EPOCH FROM (
+            LEAST(sk.end_kst, sd.date_boundary + interval '1 day') - 
+            GREATEST(sk.start_kst, sd.date_boundary)
+          ))::bigint AS seconds
+        FROM split_by_date sd
+        JOIN sessions_kst sk ON sd.session_id = sk.session_id
+        WHERE sk.end_kst > sd.date_boundary AND sk.start_kst < sd.date_boundary + interval '1 day'
+      ), daily_agg AS (
+        SELECT 
+          d,
+          SUM(seconds) AS seconds,
+          COUNT(DISTINCT session_id) AS sessions
+        FROM daily_split
+        WHERE seconds > 0
+        GROUP BY d
       ), days AS (
         SELECT generate_series((SELECT s FROM bounds), (SELECT e FROM bounds) - interval '1 day', interval '1 day') AS d
-      ), daily AS (
-        SELECT ((date_trunc('day', (ended_at AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS d,
-               SUM(duration_seconds) AS seconds,
-               COUNT(*) AS sessions
-        FROM voice_sessions
-        WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= (SELECT s FROM bounds) AND ended_at < (SELECT e FROM bounds)
-        GROUP BY d
       )
       SELECT to_char(days.d AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS date,
-             COALESCE(daily.seconds, 0) AS seconds,
-             COALESCE(daily.sessions, 0) AS sessions
+             COALESCE(daily_agg.seconds, 0) AS seconds,
+             COALESCE(daily_agg.sessions, 0) AS sessions
       FROM days
-      LEFT JOIN daily USING (d)
+      LEFT JOIN daily_agg ON days.d = daily_agg.d
       ORDER BY days.d
       `,
       [guildId.toString(), userId.toString(), start, end]
@@ -476,6 +509,7 @@ export async function fetchGuildCalendarYear(
 }
 
 // 길드 전체에서 "개인별 하루 총합"의 최대치를 구함 (연간 범위)
+// Sessions spanning multiple days are split by date boundary (06:00 KST).
 export async function fetchGuildPerUserDailyMaxHours(
   guildId: bigint,
   year: number
@@ -487,12 +521,50 @@ export async function fetchGuildPerUserDailyMaxHours(
     const end = new Date(Date.UTC(year + 1, 0, 1));
     const { rows } = await client.query(
       `
-      WITH daily AS (
-        SELECT user_id,
-               date_trunc('day', ended_at) AS d,
-               SUM(duration_seconds) AS seconds
+      WITH bounds AS (
+        SELECT 
+          ((date_trunc('day', $2::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
+          ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
+      ), sessions_kst AS (
+        SELECT 
+          user_id,
+          started_at AT TIME ZONE 'Asia/Seoul' AS start_kst,
+          ended_at AT TIME ZONE 'Asia/Seoul' AS end_kst,
+          session_id
         FROM voice_sessions
-        WHERE guild_id=$1 AND ended_at IS NOT NULL AND ended_at >= $2 AND ended_at < $3
+        WHERE guild_id=$1 
+          AND ended_at IS NOT NULL 
+          AND ended_at >= (SELECT s FROM bounds) 
+          AND started_at < (SELECT e FROM bounds)
+      ), split_by_date AS (
+        SELECT 
+          user_id,
+          session_id,
+          -- Calculate which dates this session spans
+          generate_series(
+            (date_trunc('day', start_kst - interval '6 hour') + interval '6 hour'),
+            (date_trunc('day', end_kst - interval '6 hour') + interval '6 hour'),
+            interval '1 day'
+          ) AS date_boundary
+        FROM sessions_kst
+      ), daily_split AS (
+        SELECT 
+          sd.user_id,
+          sd.date_boundary AS d,
+          -- Calculate seconds for this date portion: intersection of session time and date boundary
+          EXTRACT(EPOCH FROM (
+            LEAST(sk.end_kst, sd.date_boundary + interval '1 day') - 
+            GREATEST(sk.start_kst, sd.date_boundary)
+          ))::bigint AS seconds
+        FROM split_by_date sd
+        JOIN sessions_kst sk ON sd.session_id = sk.session_id AND sd.user_id = sk.user_id
+        WHERE sk.end_kst > sd.date_boundary AND sk.start_kst < sd.date_boundary + interval '1 day'
+      ), daily AS (
+        SELECT user_id,
+               d,
+               SUM(seconds) AS seconds
+        FROM daily_split
+        WHERE seconds > 0
         GROUP BY user_id, d
       )
       SELECT COALESCE(MAX(seconds), 0) AS max_seconds
