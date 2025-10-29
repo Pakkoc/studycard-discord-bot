@@ -124,7 +124,7 @@ function LegendBox({ color }: { color: string }) {
 
 function intensityColor(t: number) {
   const clamped = Math.max(0, Math.min(1, t));
-  const start = { r: 240, g: 253, b: 244 }; // green-50 (very light green)
+  const start = { r: 200, g: 230, b: 210 }; // light green (improved visibility)
   const end = { r: 23, g: 133, b: 12 }; // #17850c (dark green)
   const r = Math.round(start.r + (end.r - start.r) * clamped);
   const g = Math.round(start.g + (end.g - start.g) * clamped);

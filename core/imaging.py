@@ -797,7 +797,7 @@ def render_annual_grass_image(
             return (229, 231, 235, 255)  # #e5e7eb (empty cells - light gray)
         t = max(0.0, min(1.0, hours / max(1e-6, cap_hours)))
         # Green gradient: light green -> dark green (#17850c)
-        start_rgb = (240, 253, 244)  # green-50 (very light green)
+        start_rgb = (200, 230, 210)  # light green (improved visibility)
         end_rgb = (23, 133, 12)      # #17850c (dark green)
         r = int(round(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t))
         g = int(round(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t))
