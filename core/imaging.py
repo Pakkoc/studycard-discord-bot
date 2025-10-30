@@ -812,11 +812,36 @@ def render_annual_grass_image(
             c += 1
         d += _dt.timedelta(days=1)
 
-    # Draw month labels now (near bottom of header area)
-    month_label_y = outer_margin + panel_pad + header_h - 18
-    for col, label in month_labels_to_draw:
-        lx = outer_margin + panel_pad + left_label_w + col * (cell + gap)
-        draw.text((lx, month_label_y), label, fill=(107, 114, 128, 255), font=body_font)
+    # Draw month labels centered over each month's occupied columns
+    label_y = outer_margin + panel_pad + header_h - 18
+    grid_left = outer_margin + panel_pad + left_label_w
+    grid_right = grid_left + grid_w
+
+    month_centers: list[tuple[float, str]] = []
+    for m in range(1, 13):
+        cells = month_cells[m]
+        if not cells:
+            continue
+        min_c = min(c for c, _r in cells)
+        max_c = max(c for c, _r in cells)
+        span_cols = max_c - min_c + 1
+        month_pixel_w = span_cols * cell + (span_cols - 1) * gap
+        center_x = grid_left + min_c * (cell + gap) + month_pixel_w / 2.0
+        month_centers.append((center_x, f"{m}월"))
+
+    # Minimal spacing between labels to avoid accidental overlap
+    min_sep = 6  # pixels between label boxes
+    placed: list[tuple[float, float]] = []  # (x, width)
+    for idx, (cx, text) in enumerate(month_centers):
+        w = float(draw.textlength(text, font=body_font))
+        if idx == 0:
+            x = max(grid_left + w / 2.0, cx)
+        else:
+            prev_x, prev_w = placed[-1]
+            x = max(cx, prev_x + prev_w / 2.0 + min_sep + w / 2.0)
+        x = min(x, grid_right - w / 2.0)
+        placed.append((x, w))
+        draw.text((x, label_y), text, fill=(107, 114, 128, 255), font=body_font, anchor="mm")
 
     # Draw month outlines as continuous step-polygons across gaps, de-duplicated per segment
     outline_color = theme["outline"]
