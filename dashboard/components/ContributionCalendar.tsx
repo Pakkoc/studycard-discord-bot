@@ -47,13 +47,13 @@ export default function ContributionCalendar({ year, days, onSelectDate, capHour
     <div style={{ display: "flex", gap: 12 }}>
       {/* Y labels */}
       <div style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4, marginTop: 20, color: "#6b7280", fontSize: 12 }}>
-        <span>일</span>
-        <span></span>
+        <span>월</span>
         <span>화</span>
-        <span></span>
+        <span>수</span>
         <span>목</span>
-        <span></span>
+        <span>금</span>
         <span>토</span>
+        <span>일</span>
       </div>
       <div>
         {/* Month labels */}
@@ -67,8 +67,8 @@ export default function ContributionCalendar({ year, days, onSelectDate, capHour
         {/* Grid */}
         <div style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "14px", columnGap: 4, marginTop: 4 }}>
           {weeks.map((w, wi) => (
-            <div key={wi} style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4 }}>
-              {w.map((iso) => (
+          <div key={wi} style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4 }}>
+              {([...w.slice(1, 7), w[0]]).map((iso) => (
                 <Cell key={iso} iso={iso} data={map.get(iso)} maxHours={maxHours} onClick={() => onSelectDate?.(iso)} />
               ))}
             </div>

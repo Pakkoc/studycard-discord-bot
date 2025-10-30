@@ -691,6 +691,7 @@ def render_annual_grass_image(
         d += _dt.timedelta(days=1)
 
     cols = len(weeks)
+    # Use 7 rows: Monday(0) ~ Saturday(5) with Sunday as last row for clarity
     rows = 7
     grid_w = cols * cell + (cols - 1) * gap
     grid_h = rows * cell + (rows - 1) * gap
@@ -767,11 +768,9 @@ def render_annual_grass_image(
             header_x_text = header_x
     draw.text((header_x_text, header_y), title_text, fill=text_color, font=title_font)
 
-    # Weekday labels (일, 화, 목, 토만 표기)
-    y_labels = ["일", "", "화", "", "목", "", "토"]
+    # Weekday labels: Monday at top, Sunday at bottom
+    y_labels = ["월", "화", "수", "목", "금", "토", "일"]
     for i, lab in enumerate(y_labels):
-        if not lab:
-            continue
         x = outer_margin + panel_pad + 2
         y = outer_margin + panel_pad + header_h + i * (cell + gap) + (cell - 12) // 2
         draw.text((x, y), lab, fill=(107, 114, 128, 255), font=body_font)
@@ -805,10 +804,11 @@ def render_annual_grass_image(
         return (r, g, b, 255)
 
     for c, w in enumerate(weeks):
-        for r, iso in enumerate(w):
+        # Each week is Sunday..Saturday; order as Mon..Sat then Sun (bottom row)
+        ordered = w[1:7] + [w[0]]
+        for r, iso in enumerate(ordered):
             hours = float(hours_map.get(iso, 0.0))
             color = _intensity_color(hours)
-            # Stronger border when empty to make blanks clearly visible
             border = (* (empty_border_rgb if hours <= 0.0 else cell_border_rgb), 255)
             x0 = outer_margin + panel_pad + left_label_w + c * (cell + gap)
             y0 = outer_margin + panel_pad + header_h + r * (cell + gap)
