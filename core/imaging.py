@@ -672,26 +672,15 @@ def render_annual_grass_image(
     outer_margin = 12
     panel_pad = 18
 
-    # Build full date grid aligned to Sunday start
-    import datetime as _dt
+    # Build grid with Monday-first rows and sequential vertical fill from Jan 1.
+    import datetime as _dt, math as _math
     jan1 = _dt.date(year, 1, 1)
-    jan1_dow = (jan1.weekday() + 1) % 7  # Sunday=0
-    start = jan1 - _dt.timedelta(days=jan1_dow)
     next_jan = _dt.date(year + 1, 1, 1)
-
-    # Iterate days to build weeks
-    weeks: list[list[str]] = []
-    d = start
-    while d < next_jan or d.weekday() != 6:  # until Sunday after year end
-        iso = d.isoformat()
-        widx = (d - start).days // 7
-        if len(weeks) <= widx:
-            weeks.append([])
-        weeks[widx].append(iso)
-        d += _dt.timedelta(days=1)
-
-    cols = len(weeks)
-    # Use 7 rows: Monday(0) ~ Saturday(5) with Sunday as last row for clarity
+    days_in_year = (next_jan - jan1).days
+    # Monday=0 .. Sunday=6; this is the starting row index of Jan 1
+    start_row = jan1.weekday()
+    # Number of columns needed when filling vertically then wrapping after Sunday
+    cols = int(_math.ceil((start_row + days_in_year) / 7.0))
     rows = 7
     grid_w = cols * cell + (cols - 1) * gap
     grid_h = rows * cell + (rows - 1) * gap
@@ -775,22 +764,16 @@ def render_annual_grass_image(
         y = outer_margin + panel_pad + header_h + i * (cell + gap) + (cell - 12) // 2 - 3
         draw.text((x, y), lab, fill=(107, 114, 128, 255), font=body_font)
 
-    # Month labels per column using first day in that week
-    def _month_label(iso: str) -> str:
-        if not iso:
-            return ""
-        d = _dt.date.fromisoformat(iso)
-        return f"{d.month}월" if d.day <= 7 else ""
+    # Month labels: column where day==1 appears during sequential fill
+    month_first_col: dict[int, int] = {}
+    # We'll compute and draw cells in the next section; labels are drawn beforehand here by prediction
+    # But since we already know start_row and total days, we can determine columns on the fly while drawing.
+    # We'll store labels and draw after filling to avoid text overlapping with avatar/title.
+    month_labels_to_draw: list[tuple[int, str]] = []
 
-    # Place month labels near the bottom of the header area to avoid title overlap
-    month_label_y = outer_margin + panel_pad + header_h - 18  # approx. body font height
-    for c, w in enumerate(weeks):
-        label = _month_label(w[0] if w else "")
-        if label:
-            lx = outer_margin + panel_pad + left_label_w + c * (cell + gap)
-            draw.text((lx, month_label_y), label, fill=(107, 114, 128, 255), font=body_font)
+    # (Removed) month boundary separators: polygon outlines below will provide clear separation
 
-    # Draw cells
+    # Draw cells (sequential from Jan 1, vertical Monday..Sunday, wrap to next column)
     def _intensity_color(hours: float) -> tuple[int, int, int, int]:
         if hours <= 0:
             return (229, 231, 235, 255)  # #e5e7eb (empty cells - light gray)
@@ -803,16 +786,124 @@ def render_annual_grass_image(
         b = int(round(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t))
         return (r, g, b, 255)
 
-    for c, w in enumerate(weeks):
-        # Each week is Sunday..Saturday; order as Mon..Sat then Sun (bottom row)
-        ordered = w[1:7] + [w[0]]
-        for r, iso in enumerate(ordered):
-            hours = float(hours_map.get(iso, 0.0))
-            color = _intensity_color(hours)
-            border = (* (empty_border_rgb if hours <= 0.0 else cell_border_rgb), 255)
-            x0 = outer_margin + panel_pad + left_label_w + c * (cell + gap)
-            y0 = outer_margin + panel_pad + header_h + r * (cell + gap)
-            draw.rounded_rectangle((x0, y0, x0 + cell, y0 + cell), radius=3, fill=color, outline=border, width=1)
+    # Track month-wise occupied cells to derive precise polygon outlines later
+    month_cells: dict[int, set[tuple[int, int]]] = {m: set() for m in range(1, 13)}
+
+    c = 0
+    r = start_row
+    d = jan1
+    while d < next_jan:
+        if d.day == 1:
+            month_first_col[d.month] = c
+            month_labels_to_draw.append((c, f"{d.month}월"))
+        iso = d.isoformat()
+        hours = float(hours_map.get(iso, 0.0))
+        color = _intensity_color(hours)
+        border = (* (empty_border_rgb if hours <= 0.0 else cell_border_rgb), 255)
+        x0 = outer_margin + panel_pad + left_label_w + c * (cell + gap)
+        y0 = outer_margin + panel_pad + header_h + r * (cell + gap)
+        draw.rounded_rectangle((x0, y0, x0 + cell, y0 + cell), radius=3, fill=color, outline=border, width=1)
+        month_cells[d.month].add((c, r))
+
+        # advance vertically; wrap to next column after Sunday
+        r += 1
+        if r >= 7:
+            r = 0
+            c += 1
+        d += _dt.timedelta(days=1)
+
+    # Draw month labels now (near bottom of header area)
+    month_label_y = outer_margin + panel_pad + header_h - 18
+    for col, label in month_labels_to_draw:
+        lx = outer_margin + panel_pad + left_label_w + col * (cell + gap)
+        draw.text((lx, month_label_y), label, fill=(107, 114, 128, 255), font=body_font)
+
+    # Draw month outlines as continuous step-polygons across gaps, de-duplicated per segment
+    outline_color = theme["outline"]
+    drawn_segments: set[tuple[int, int, int, int]] = set()
+
+    def _seg_key(x1: int, y1: int, x2: int, y2: int) -> tuple[int, int, int, int]:
+        if (x2, y2) < (x1, y1):
+            x1, y1, x2, y2 = x2, y2, x1, y1
+        return (x1, y1, x2, y2)
+
+    for m in range(1, 13):
+        cells = month_cells[m]
+        if not cells:
+            continue
+        cols = sorted({c for (c, _r) in cells})
+        # For each column, compute top/bottom rows occupied by this month
+        # Store line coordinates offset to the center of gaps so that outlines
+        # run midway between cells (consistent spacing from squares).
+        col_meta: list[tuple[int, int, int, int, int]] = []  # (c, lx_line, rx_line, top_line_y, bottom_line_y)
+        half_gap = int(round(gap / 2))
+        for c in cols:
+            rows = sorted(r for (cc, r) in cells if cc == c)
+            if not rows:
+                continue
+            top_r = rows[0]
+            bot_r = rows[-1]
+            lx = outer_margin + panel_pad + left_label_w + c * (cell + gap)
+            rx = lx + cell
+            ty = outer_margin + panel_pad + header_h + top_r * (cell + gap)
+            by = outer_margin + panel_pad + header_h + bot_r * (cell + gap) + cell
+            # Shift to center of the inter-cell gaps
+            lx_line = lx - half_gap
+            rx_line = rx + half_gap
+            ty_line = ty - half_gap
+            by_line = by + half_gap
+            col_meta.append((c, lx_line, rx_line, ty_line, by_line))
+        if not col_meta:
+            continue
+
+        # Build step path across the top edge (left -> right), bridging the gaps
+        top_pts: list[tuple[int, int]] = []
+        prev_ty = None
+        for i, (_c, lx, rx, ty, _by) in enumerate(col_meta):
+            if not top_pts:
+                top_pts.append((lx, ty))
+                prev_ty = ty
+            elif prev_ty != ty:
+                top_pts.append((lx, ty))  # vertical step to new level
+            top_pts.append((rx, ty))      # across this column
+            if i < len(col_meta) - 1:
+                n_lx = col_meta[i + 1][1]
+                top_pts.append((n_lx, ty))  # bridge the gap to next column
+            prev_ty = ty
+
+        # Build step path across the bottom edge (right -> left)
+        bottom_pts: list[tuple[int, int]] = []
+        prev_by = None
+        for i, (_c, lx, rx, _ty, by) in enumerate(reversed(col_meta)):
+            if not bottom_pts:
+                bottom_pts.append((rx, by))
+                prev_by = by
+            elif prev_by != by:
+                bottom_pts.append((rx, by))  # vertical step to new level
+            bottom_pts.append((lx, by))       # across this column
+            if i < len(col_meta) - 1:
+                p_rx = list(reversed(col_meta))[i + 1][2]
+                bottom_pts.append((p_rx, by))  # bridge the gap to previous column
+            prev_by = by
+
+        path = top_pts + bottom_pts
+        if len(path) >= 2:
+            line_w = 1
+            for i in range(1, len(path)):
+                x1, y1 = path[i - 1]
+                x2, y2 = path[i]
+                key = _seg_key(x1, y1, x2, y2)
+                if key in drawn_segments:
+                    continue
+                draw.line([(x1, y1), (x2, y2)], fill=outline_color, width=line_w)
+                drawn_segments.add(key)
+            # close polygon
+            x1, y1 = path[-1]
+            x2, y2 = path[0]
+            key = _seg_key(x1, y1, x2, y2)
+            if key not in drawn_segments:
+                draw.line([(x1, y1), (x2, y2)], fill=outline_color, width=line_w)
+                drawn_segments.add(key)
 
     out = BytesIO()
     img.save(out, format="PNG")
