@@ -772,7 +772,7 @@ def render_annual_grass_image(
     y_labels = ["월", "화", "수", "목", "금", "토", "일"]
     for i, lab in enumerate(y_labels):
         x = outer_margin + panel_pad + 2
-        y = outer_margin + panel_pad + header_h + i * (cell + gap) + (cell - 12) // 2
+        y = outer_margin + panel_pad + header_h + i * (cell + gap) + (cell - 12) // 2 - 4
         draw.text((x, y), lab, fill=(107, 114, 128, 255), font=body_font)
 
     # Month labels per column using first day in that week
