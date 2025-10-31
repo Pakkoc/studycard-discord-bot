@@ -43,20 +43,24 @@ export async function fetchDailyTrend(guildId: bigint, days = 30): Promise<Daily
     start.setDate(start.getDate() - (days - 1));
     const { rows } = await client.query(
       `
-      SELECT date_trunc('day', ended_at) AS d,
+      WITH start_bound AS (
+        SELECT date_trunc('day', $2::timestamptz AT TIME ZONE 'Asia/Seoul') AS start_day
+      )
+      SELECT to_char(date_trunc('day', ended_at AT TIME ZONE 'Asia/Seoul'), 'YYYY-MM-DD') AS day_label,
              SUM(duration_seconds) AS seconds,
              COUNT(DISTINCT user_id) AS dau
       FROM voice_sessions
-      WHERE guild_id=$1 AND ended_at IS NOT NULL AND ended_at >= $2
-      GROUP BY d
-      ORDER BY d
+      WHERE guild_id=$1 AND ended_at IS NOT NULL
+        AND (ended_at AT TIME ZONE 'Asia/Seoul') >= (SELECT start_day FROM start_bound)
+      GROUP BY day_label
+      ORDER BY day_label
       `,
       [guildId.toString(), start]
     );
     const map = new Map<string, { seconds: number; dau: number }>();
     for (const r of rows) {
-      const d = new Date(r.d).toISOString().slice(0, 10);
-      map.set(d, { seconds: Number(r.seconds ?? 0), dau: Number(r.dau ?? 0) });
+      const day = String(r.day_label);
+      map.set(day, { seconds: Number(r.seconds ?? 0), dau: Number(r.dau ?? 0) });
     }
     const out: DailyTrendPoint[] = [];
     for (let i = 0; i < days; i++) {
@@ -81,8 +85,14 @@ export async function fetchLeaderboard(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    const fieldExpr = `CASE WHEN ended_at >= date_trunc('${period}', now()) THEN duration_seconds END`;
+    const boundColumn = period === "week" ? "week_start" : "month_start";
+    const fieldExpr = `CASE WHEN vs.ended_at >= (SELECT ${boundColumn} FROM bounds) THEN vs.duration_seconds END`;
     const sql = `
+      WITH bounds AS (
+        SELECT
+          ((date_trunc('week',  now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS week_start,
+          ((date_trunc('month', now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS month_start
+      )
       SELECT u.user_id::text AS user_id, u.nickname,
              COALESCE(SUM(${fieldExpr}), 0) AS value_seconds
       FROM users u
@@ -152,6 +162,9 @@ export async function fetchSessionLengthHistogram(
     start.setDate(start.getDate() - days);
     const { rows } = await client.query(
       `
+      WITH start_bound AS (
+        SELECT ($2::timestamptz AT TIME ZONE 'Asia/Seoul') AS start_at
+      )
       SELECT bucket, COUNT(*)::int AS count
       FROM (
         SELECT CASE
@@ -163,7 +176,8 @@ export async function fetchSessionLengthHistogram(
           ELSE '120m+'
         END AS bucket
         FROM voice_sessions
-        WHERE guild_id=$1 AND ended_at IS NOT NULL AND ended_at >= $2
+        WHERE guild_id=$1 AND ended_at IS NOT NULL
+          AND (ended_at AT TIME ZONE 'Asia/Seoul') >= (SELECT start_at FROM start_bound)
       ) t
       GROUP BY bucket
       ORDER BY CASE bucket

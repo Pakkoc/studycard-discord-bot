@@ -79,8 +79,11 @@ export async function fetchGuildUserStats(
     }
 
     const sql = `
-      WITH kstart AS (
-        SELECT ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s
+      WITH bounds AS (
+        SELECT
+          ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS today_start,
+          ((date_trunc('week',  now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS week_start,
+          ((date_trunc('month', now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS month_start
       )
       SELECT
         u.user_id,
@@ -90,10 +93,10 @@ export async function fetchGuildUserStats(
         u.level_name,
         COALESCE(u.xp, 0) AS xp,
         COALESCE(u.total_seconds, 0) AS total_seconds,
-        COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT s FROM kstart) THEN vs.duration_seconds END), 0) AS today_seconds,
-        COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('week',  now()) THEN vs.duration_seconds END), 0) AS week_seconds,
-        COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('month', now()) THEN vs.duration_seconds END), 0) AS month_seconds,
-        to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
+        COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT today_start FROM bounds) THEN vs.duration_seconds END), 0) AS today_seconds,
+        COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT week_start FROM bounds) THEN vs.duration_seconds END), 0) AS week_seconds,
+        COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT month_start FROM bounds) THEN vs.duration_seconds END), 0) AS month_seconds,
+        to_char(u.last_seen_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS last_seen_at
       FROM users u
       LEFT JOIN voice_sessions vs
         ON vs.user_id = u.user_id
@@ -185,6 +188,12 @@ export async function fetchGuildUserStatsPaged(
     const offsetIdx = baseParams.length; // not used in query string directly below; indices are illustrative
 
     const sql = `
+      WITH bounds AS (
+        SELECT
+          ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS today_start,
+          ((date_trunc('week',  now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS week_start,
+          ((date_trunc('month', now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS month_start
+      )
       SELECT
         u.user_id,
         u.nickname,
@@ -193,10 +202,10 @@ export async function fetchGuildUserStatsPaged(
         u.level_name,
         COALESCE(u.xp, 0) AS xp,
         COALESCE(u.total_seconds, 0) AS total_seconds,
-        COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('day',   now()) THEN vs.duration_seconds END), 0) AS today_seconds,
-        COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('week',  now()) THEN vs.duration_seconds END), 0) AS week_seconds,
-        COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('month', now()) THEN vs.duration_seconds END), 0) AS month_seconds,
-        to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
+        COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT today_start FROM bounds) THEN vs.duration_seconds END), 0) AS today_seconds,
+        COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT week_start FROM bounds) THEN vs.duration_seconds END), 0) AS week_seconds,
+        COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT month_start FROM bounds) THEN vs.duration_seconds END), 0) AS month_seconds,
+        to_char(u.last_seen_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS last_seen_at
       FROM users u
       LEFT JOIN voice_sessions vs
         ON vs.user_id = u.user_id
@@ -241,7 +250,7 @@ export async function fetchUserDetail(guildId: bigint, userId: bigint): Promise<
       `
       SELECT u.user_id, u.nickname, u.student_no, u.status, u.level_name, COALESCE(u.xp,0) AS xp,
              COALESCE(u.total_seconds,0) AS total_seconds,
-             to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
+             to_char(u.last_seen_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS last_seen_at
       FROM users u
       WHERE u.guild_id=$1 AND u.user_id=$2
       `,
@@ -274,8 +283,8 @@ export async function fetchUserEntryLogs(
   try {
     const { rows } = await client.query(
       `
-      SELECT to_char(started_at, 'YYYY-MM-DD HH24:MI') AS started_at,
-             to_char(ended_at,   'YYYY-MM-DD HH24:MI') AS ended_at,
+      SELECT to_char(started_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS started_at,
+             to_char(ended_at   AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI')   AS ended_at,
              duration_seconds
       FROM voice_sessions
       WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL
@@ -346,8 +355,8 @@ export async function fetchUserWeekdayHourHeatmap(
     start.setDate(start.getDate() - days);
     const { rows } = await client.query(
       `
-      SELECT EXTRACT(DOW FROM ended_at)::int AS dow,
-             EXTRACT(HOUR FROM ended_at)::int AS hour,
+      SELECT EXTRACT(DOW FROM ended_at AT TIME ZONE 'Asia/Seoul')::int AS dow,
+             EXTRACT(HOUR FROM ended_at AT TIME ZONE 'Asia/Seoul')::int AS hour,
              COUNT(*)::int AS cnt,
              COALESCE(SUM(duration_seconds), 0) AS seconds
       FROM voice_sessions
@@ -375,15 +384,26 @@ export async function fetchUserMonthlyTrend(
     const start = new Date();
     start.setUTCDate(1);
     start.setUTCMonth(start.getUTCMonth() - (months - 1));
+    const end = new Date();
     const { rows } = await client.query(
       `
-      WITH months AS (
-        SELECT generate_series(date_trunc('month', $3::timestamptz), date_trunc('month', $4::timestamptz), interval '1 month') AS m
+      WITH month_bounds AS (
+        SELECT
+          date_trunc('month', $3::timestamptz AT TIME ZONE 'Asia/Seoul') AS start_month,
+          date_trunc('month', $4::timestamptz AT TIME ZONE 'Asia/Seoul') AS end_month
+      ), months AS (
+        SELECT generate_series(
+          (SELECT start_month FROM month_bounds),
+          (SELECT end_month   FROM month_bounds),
+          interval '1 month'
+        ) AS m
       ), agg AS (
-        SELECT date_trunc('month', ended_at) AS m,
+        SELECT date_trunc('month', ended_at AT TIME ZONE 'Asia/Seoul') AS m,
                SUM(duration_seconds) AS seconds
         FROM voice_sessions
-        WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3 AND ended_at <= $4
+        WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL
+          AND (ended_at AT TIME ZONE 'Asia/Seoul') >= (SELECT start_month FROM month_bounds)
+          AND (ended_at AT TIME ZONE 'Asia/Seoul') <  ((SELECT end_month FROM month_bounds) + interval '1 month')
         GROUP BY m
       )
       SELECT to_char(months.m, 'YYYY-MM') AS month,
@@ -392,7 +412,7 @@ export async function fetchUserMonthlyTrend(
       LEFT JOIN agg ON agg.m = months.m
       ORDER BY months.m
       `,
-      [guildId.toString(), userId.toString(), start, new Date()]
+      [guildId.toString(), userId.toString(), start, end]
     );
     return rows.map((r) => ({ month: String(r.month), hours: Math.round(((Number(r.seconds || 0) / 3600)) * 100) / 100 }));
   } finally {
@@ -490,13 +510,23 @@ export async function fetchGuildCalendarYear(
     const end = new Date(Date.UTC(year + 1, 0, 1));
     const { rows } = await client.query(
       `
-      WITH days AS (
-        SELECT generate_series($2::timestamptz, $3::timestamptz - interval '1 day', interval '1 day') AS d
+      WITH day_bounds AS (
+        SELECT
+          date_trunc('day', $2::timestamptz AT TIME ZONE 'Asia/Seoul') AS start_day,
+          date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') AS end_day
+      ), days AS (
+        SELECT generate_series(
+          (SELECT start_day FROM day_bounds),
+          (SELECT end_day FROM day_bounds) - interval '1 day',
+          interval '1 day'
+        ) AS d
       ), daily AS (
-        SELECT date_trunc('day', ended_at) AS d,
+        SELECT date_trunc('day', ended_at AT TIME ZONE 'Asia/Seoul') AS d,
                SUM(duration_seconds) AS seconds
         FROM voice_sessions
-        WHERE guild_id=$1 AND ended_at IS NOT NULL AND ended_at >= $2 AND ended_at < $3
+        WHERE guild_id=$1 AND ended_at IS NOT NULL
+          AND (ended_at AT TIME ZONE 'Asia/Seoul') >= (SELECT start_day FROM day_bounds)
+          AND (ended_at AT TIME ZONE 'Asia/Seoul') <  ((SELECT end_day FROM day_bounds) + interval '1 day')
         GROUP BY d
       )
       SELECT to_char(days.d, 'YYYY-MM-DD') AS date,
@@ -639,7 +669,7 @@ export async function fetchUserAvailableYears(
   try {
     const { rows } = await client.query(
       `
-      SELECT DISTINCT EXTRACT(YEAR FROM ended_at)::int AS year
+      SELECT DISTINCT EXTRACT(YEAR FROM ended_at AT TIME ZONE 'Asia/Seoul')::int AS year
       FROM voice_sessions
       WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL
       ORDER BY year
