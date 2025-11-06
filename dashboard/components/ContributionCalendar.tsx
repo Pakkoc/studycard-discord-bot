@@ -78,7 +78,7 @@ export default function ContributionCalendar({ year, days, onSelectDate, capHour
       {/* Legend vertical (많음 → 적음) */}
       <div style={{ display: "grid", gridTemplateRows: "auto 112px auto", rowGap: 6, color: "#6b7280", fontSize: 12 }}>
         <span style={{ textAlign: "center" }}>많음</span>
-        <div style={{ width: 12, height: 112, borderRadius: 2, border: "1px solid #e5e7eb", background: "linear-gradient(#2563eb, #dbeafe, #e5e7eb)" }} />
+        <div style={{ width: 12, height: 112, borderRadius: 2, border: "1px solid #e5e7eb", background: "linear-gradient(to bottom, #ed008c, #d0191b, #f06730, #f08622, #e9eb28, #b4e742, #5fc650, #1fa5a6, #761ca2, #b23593)" }} />
         <span style={{ textAlign: "center" }}>적음</span>
       </div>
     </div>
@@ -87,7 +87,9 @@ export default function ContributionCalendar({ year, days, onSelectDate, capHour
 
 function Cell({ iso, data, maxHours, onClick }: { iso: string; data?: CalendarDay; maxHours: number; onClick?: () => void }) {
   const hours = Math.round(((data?.seconds || 0) / 3600) * 100) / 100;
-  const color = hours <= 0 ? "#e5e7eb" : intensityColor(Math.max(0, Math.min(1, hours / maxHours)));
+  const d = new Date(iso);
+  const month = d.getUTCMonth() + 1;
+  const color = hours <= 0 ? "#e5e7eb" : intensityColor(Math.max(0, Math.min(1, hours / maxHours)), month);
   const title = `${iso}\n총 ${hours}시간, ${data?.sessions || 0}세션`;
   const inYear = true; // we include prev/next spillover weeks like GitHub
   return (
@@ -122,13 +124,30 @@ function LegendBox({ color }: { color: string }) {
   return <span style={{ width: 12, height: 12, background: color, display: "inline-block", borderRadius: 2, border: "1px solid #e5e7eb" }} />;
 }
 
-function intensityColor(t: number) {
+function intensityColor(t: number, month: number) {
   const clamped = Math.max(0, Math.min(1, t));
-  const start = { r: 200, g: 230, b: 210 }; // light green (improved visibility)
-  const end = { r: 23, g: 133, b: 12 }; // #17850c (dark green)
-  const r = Math.round(start.r + (end.r - start.r) * clamped);
-  const g = Math.round(start.g + (end.g - start.g) * clamped);
-  const b = Math.round(start.b + (end.b - start.b) * clamped);
+  
+  // Monthly color scheme
+  const monthColors: { [key: number]: { r: number; g: number; b: number } } = {
+    1: { r: 237, g: 1, b: 138 },      // January #ED018A
+    2: { r: 207, g: 26, b: 27 },      // February #CF1A1B
+    3: { r: 240, g: 103, b: 48 },     // March #F06730
+    4: { r: 240, g: 134, b: 34 },     // April #F08622
+    5: { r: 233, g: 235, b: 40 },     // May #E9EB28
+    6: { r: 180, g: 231, b: 66 },     // June #B4E742
+    7: { r: 95, g: 198, b: 80 },      // July #5FC650
+    8: { r: 31, g: 165, b: 166 },     // August #1FA5A6
+    9: { r: 27, g: 26, b: 241 },      // September #1B1AF1
+    10: { r: 65, g: 18, b: 160 },     // October #4112A0
+    11: { r: 116, g: 29, b: 160 },    // November #741DA0
+    12: { r: 178, g: 53, b: 147 },    // December #B23593
+  };
+  
+  const end = monthColors[month] || { r: 23, g: 133, b: 12 }; // fallback to green
+  // Full gradient: white (t=0) to full color (t=1)
+  const r = Math.round(255 + (end.r - 255) * clamped);
+  const g = Math.round(255 + (end.g - 255) * clamped);
+  const b = Math.round(255 + (end.b - 255) * clamped);
   return `rgb(${r}, ${g}, ${b})`;
 }
 

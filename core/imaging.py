@@ -773,17 +773,33 @@ def render_annual_grass_image(
 
     # (Removed) month boundary separators: polygon outlines below will provide clear separation
 
+    # Monthly color scheme
+    month_colors = {
+        1: (237, 1, 138),      # January #ED018A
+        2: (207, 26, 27),      # February #CF1A1B
+        3: (240, 103, 48),     # March #F06730
+        4: (240, 134, 34),     # April #F08622
+        5: (233, 235, 40),     # May #E9EB28
+        6: (180, 231, 66),     # June #B4E742
+        7: (95, 198, 80),      # July #5FC650
+        8: (31, 165, 166),     # August #1FA5A6
+        9: (27, 26, 241),      # September #1B1AF1
+        10: (65, 18, 160),     # October #4112A0
+        11: (116, 29, 160),    # November #741DA0
+        12: (178, 53, 147),    # December #B23593
+    }
+
     # Draw cells (sequential from Jan 1, vertical Monday..Sunday, wrap to next column)
-    def _intensity_color(hours: float) -> tuple[int, int, int, int]:
+    def _intensity_color(hours: float, month: int) -> tuple[int, int, int, int]:
         if hours <= 0:
             return (229, 231, 235, 255)  # #e5e7eb (empty cells - light gray)
         t = max(0.0, min(1.0, hours / max(1e-6, cap_hours)))
-        # Green gradient: light green -> dark green (#17850c)
-        start_rgb = (200, 230, 210)  # light green (improved visibility)
-        end_rgb = (23, 133, 12)      # #17850c (dark green)
-        r = int(round(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * t))
-        g = int(round(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * t))
-        b = int(round(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * t))
+        # Full gradient: white (t=0) to full color (t=1)
+        end_rgb = month_colors.get(month, (23, 133, 12))  # fallback to green
+        # Start from white (255, 255, 255) for full gradient
+        r = int(round(255 + (end_rgb[0] - 255) * t))
+        g = int(round(255 + (end_rgb[1] - 255) * t))
+        b = int(round(255 + (end_rgb[2] - 255) * t))
         return (r, g, b, 255)
 
     # Track month-wise occupied cells to derive precise polygon outlines later
@@ -798,7 +814,7 @@ def render_annual_grass_image(
             month_labels_to_draw.append((c, f"{d.month}월"))
         iso = d.isoformat()
         hours = float(hours_map.get(iso, 0.0))
-        color = _intensity_color(hours)
+        color = _intensity_color(hours, d.month)
         border = (* (empty_border_rgb if hours <= 0.0 else cell_border_rgb), 255)
         x0 = outer_margin + panel_pad + left_label_w + c * (cell + gap)
         y0 = outer_margin + panel_pad + header_h + r * (cell + gap)
@@ -843,92 +859,7 @@ def render_annual_grass_image(
         placed.append((x, w))
         draw.text((x, label_y), text, fill=(107, 114, 128, 255), font=body_font, anchor="mm")
 
-    # Draw month outlines as continuous step-polygons across gaps, de-duplicated per segment
-    outline_color = theme["outline"]
-    drawn_segments: set[tuple[int, int, int, int]] = set()
-
-    def _seg_key(x1: int, y1: int, x2: int, y2: int) -> tuple[int, int, int, int]:
-        if (x2, y2) < (x1, y1):
-            x1, y1, x2, y2 = x2, y2, x1, y1
-        return (x1, y1, x2, y2)
-
-    for m in range(1, 13):
-        cells = month_cells[m]
-        if not cells:
-            continue
-        cols = sorted({c for (c, _r) in cells})
-        # For each column, compute top/bottom rows occupied by this month
-        # Store line coordinates offset to the center of gaps so that outlines
-        # run midway between cells (consistent spacing from squares).
-        col_meta: list[tuple[int, int, int, int, int]] = []  # (c, lx_line, rx_line, top_line_y, bottom_line_y)
-        half_gap = int(round(gap / 2))
-        for c in cols:
-            rows = sorted(r for (cc, r) in cells if cc == c)
-            if not rows:
-                continue
-            top_r = rows[0]
-            bot_r = rows[-1]
-            lx = outer_margin + panel_pad + left_label_w + c * (cell + gap)
-            rx = lx + cell
-            ty = outer_margin + panel_pad + header_h + top_r * (cell + gap)
-            by = outer_margin + panel_pad + header_h + bot_r * (cell + gap) + cell
-            # Shift to center of the inter-cell gaps
-            lx_line = lx - half_gap
-            rx_line = rx + half_gap
-            ty_line = ty - half_gap
-            by_line = by + half_gap
-            col_meta.append((c, lx_line, rx_line, ty_line, by_line))
-        if not col_meta:
-            continue
-
-        # Build step path across the top edge (left -> right), bridging the gaps
-        top_pts: list[tuple[int, int]] = []
-        prev_ty = None
-        for i, (_c, lx, rx, ty, _by) in enumerate(col_meta):
-            if not top_pts:
-                top_pts.append((lx, ty))
-                prev_ty = ty
-            elif prev_ty != ty:
-                top_pts.append((lx, ty))  # vertical step to new level
-            top_pts.append((rx, ty))      # across this column
-            if i < len(col_meta) - 1:
-                n_lx = col_meta[i + 1][1]
-                top_pts.append((n_lx, ty))  # bridge the gap to next column
-            prev_ty = ty
-
-        # Build step path across the bottom edge (right -> left)
-        bottom_pts: list[tuple[int, int]] = []
-        prev_by = None
-        for i, (_c, lx, rx, _ty, by) in enumerate(reversed(col_meta)):
-            if not bottom_pts:
-                bottom_pts.append((rx, by))
-                prev_by = by
-            elif prev_by != by:
-                bottom_pts.append((rx, by))  # vertical step to new level
-            bottom_pts.append((lx, by))       # across this column
-            if i < len(col_meta) - 1:
-                p_rx = list(reversed(col_meta))[i + 1][2]
-                bottom_pts.append((p_rx, by))  # bridge the gap to previous column
-            prev_by = by
-
-        path = top_pts + bottom_pts
-        if len(path) >= 2:
-            line_w = 1
-            for i in range(1, len(path)):
-                x1, y1 = path[i - 1]
-                x2, y2 = path[i]
-                key = _seg_key(x1, y1, x2, y2)
-                if key in drawn_segments:
-                    continue
-                draw.line([(x1, y1), (x2, y2)], fill=outline_color, width=line_w)
-                drawn_segments.add(key)
-            # close polygon
-            x1, y1 = path[-1]
-            x2, y2 = path[0]
-            key = _seg_key(x1, y1, x2, y2)
-            if key not in drawn_segments:
-                draw.line([(x1, y1), (x2, y2)], fill=outline_color, width=line_w)
-                drawn_segments.add(key)
+    # Month outlines removed - only labels remain for month identification
 
     out = BytesIO()
     img.save(out, format="PNG")
