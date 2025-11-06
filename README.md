@@ -112,6 +112,7 @@
 - **데이터베이스**: PostgreSQL (Supabase)
 - **이미지 생성**: Pillow (PIL)
 - **대시보드**: Next.js + TypeScript (관리자용)
+- **인프라**: Vultr VPS (Ubuntu)
 - **배포**: systemd 서비스 (24/7 가동)
 
 ## 🎯 성공 지표
