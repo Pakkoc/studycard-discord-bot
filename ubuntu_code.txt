@@ -8,7 +8,7 @@ sudo systemctl restart discord-bot
 sudo journalctl -u discord-bot -f
 
 # .evn 수정하기
-nano .evn
+nano .env
 (수정)
 ctrl+o -> enter -> ctrl+x
 
