@@ -88,10 +88,15 @@ export default function ContributionCalendar({ year, days, onSelectDate, capHour
 function Cell({ iso, data, maxHours, onClick }: { iso: string; data?: CalendarDay; maxHours: number; onClick?: () => void }) {
   const hours = Math.round(((data?.seconds || 0) / 3600) * 100) / 100;
   const d = new Date(iso);
-  const month = d.getUTCMonth() + 1;
-  const color = hours <= 0 ? "#e5e7eb" : intensityColor(Math.max(0, Math.min(1, hours / maxHours)), month);
+  const day = d.getUTCDate();
+  // 0시간은 공백으로 표시, 1초 이상이면 색상 적용
+  const color = hours <= 0 ? "#e5e7eb" : intensityColor(Math.max(0, Math.min(1, hours / maxHours)));
   const title = `${iso}\n총 ${hours}시간, ${data?.sessions || 0}세션`;
   const inYear = true; // we include prev/next spillover weeks like GitHub
+  
+  // 매월 1일인지 확인
+  const isFirstOfMonth = day === 1;
+  
   return (
     <div
       role="button"
@@ -107,8 +112,14 @@ function Cell({ iso, data, maxHours, onClick }: { iso: string; data?: CalendarDa
         boxShadow: "inset 0 0 0 1px #d1d5db",
         cursor: "pointer",
         opacity: inYear ? 1 : 0.35,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 8,
       }}
-    />
+    >
+      {isFirstOfMonth && "📅"}
+    </div>
   );
 }
 
@@ -124,30 +135,40 @@ function LegendBox({ color }: { color: string }) {
   return <span style={{ width: 12, height: 12, background: color, display: "inline-block", borderRadius: 2, border: "1px solid #e5e7eb" }} />;
 }
 
-function intensityColor(t: number, month: number) {
-  const clamped = Math.max(0, Math.min(1, t));
+function intensityColor(t: number) {
+  const t_raw = Math.max(0, Math.min(1, t));
   
-  // Monthly color scheme
-  const monthColors: { [key: number]: { r: number; g: number; b: number } } = {
-    1: { r: 237, g: 1, b: 138 },      // January #ED018A
-    2: { r: 207, g: 26, b: 27 },      // February #CF1A1B
-    3: { r: 240, g: 103, b: 48 },     // March #F06730
-    4: { r: 240, g: 134, b: 34 },     // April #F08622
-    5: { r: 233, g: 235, b: 40 },     // May #E9EB28
-    6: { r: 180, g: 231, b: 66 },     // June #B4E742
-    7: { r: 95, g: 198, b: 80 },      // July #5FC650
-    8: { r: 31, g: 165, b: 166 },     // August #1FA5A6
-    9: { r: 27, g: 26, b: 241 },      // September #1B1AF1
-    10: { r: 65, g: 18, b: 160 },     // October #4112A0
-    11: { r: 116, g: 29, b: 160 },    // November #741DA0
-    12: { r: 178, g: 53, b: 147 },    // December #B23593
-  };
+  // 7단계 그라데이션 적용 (1초 이상이면 최소 1단계 보장)
+  // 7단계는 12시간(100%) 이상
+  let clamped: number;
   
-  const end = monthColors[month] || { r: 23, g: 133, b: 12 }; // fallback to green
-  // Full gradient: white (t=0) to full color (t=1)
-  const r = Math.round(255 + (end.r - 255) * clamped);
-  const g = Math.round(255 + (end.g - 255) * clamped);
-  const b = Math.round(255 + (end.b - 255) * clamped);
+  // 100% 이상이면 7단계 (최대 색상)
+  if (t_raw >= 1.0) {
+    clamped = 1.0;  // 7단계: 12시간 이상
+  } else {
+    // 1~6단계: 각 단계: 14.29%, 28.57%, 42.86%, 57.14%, 71.43%, 85.71%
+    if (t_raw < 0.1429) {
+      clamped = 0.1429;  // 1단계: 1초 ~ 1시간 43분 미만
+    } else if (t_raw < 0.2857) {
+      clamped = 0.2857;  // 2단계: 1시간 43분 ~ 3시간 26분 미만
+    } else if (t_raw < 0.4286) {
+      clamped = 0.4286;  // 3단계: 3시간 26분 ~ 5시간 9분 미만
+    } else if (t_raw < 0.5714) {
+      clamped = 0.5714;  // 4단계: 5시간 9분 ~ 6시간 52분 미만
+    } else if (t_raw < 0.7143) {
+      clamped = 0.7143;  // 5단계: 6시간 52분 ~ 8시간 34분 미만
+    } else {
+      clamped = 0.8571;  // 6단계: 8시간 34분 ~ 12시간 미만
+    }
+  }
+  
+  // Single color scheme: #17850c (dark green)
+  const baseColor = { r: 23, g: 133, b: 12 };
+  
+  // Gradient: white to full color
+  const r = Math.round(255 + (baseColor.r - 255) * clamped);
+  const g = Math.round(255 + (baseColor.g - 255) * clamped);
+  const b = Math.round(255 + (baseColor.b - 255) * clamped);
   return `rgb(${r}, ${g}, ${b})`;
 }
 

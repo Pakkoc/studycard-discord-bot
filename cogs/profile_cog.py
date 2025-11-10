@@ -356,9 +356,8 @@ class ProfileCog(commands.Cog):
             await ensure_user(target.id, interaction.guild.id)
             # 데이터 조회
             data = await fetch_user_calendar_year_kst6(target.id, interaction.guild.id, y)
-            # cap: 길드 내 개인-하루 최대 × 0.85
-            base_max = await fetch_guild_per_user_daily_max_hours_kst6(interaction.guild.id, y)
-            cap_hours = max(1.0, round(base_max * 0.85, 2))
+            # cap: 12시간 고정 (12시간 이상이면 최대 색상)
+            cap_hours = 12.0
 
             # 이미지 렌더
             house_name = pick_house_name(target)

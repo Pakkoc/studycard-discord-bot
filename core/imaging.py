@@ -773,38 +773,57 @@ def render_annual_grass_image(
 
     # (Removed) month boundary separators: polygon outlines below will provide clear separation
 
-    # Monthly color scheme
+    # 월별 최대 색상 정의 (1-2-1안 최종)
     month_colors = {
-        1: (237, 1, 138),      # January #ED018A
-        2: (207, 26, 27),      # February #CF1A1B
-        3: (240, 103, 48),     # March #F06730
-        4: (240, 134, 34),     # April #F08622
-        5: (233, 235, 40),     # May #E9EB28
-        6: (180, 231, 66),     # June #B4E742
-        7: (95, 198, 80),      # July #5FC650
-        8: (31, 165, 166),     # August #1FA5A6
-        9: (27, 26, 241),      # September #1B1AF1
-        10: (65, 18, 160),     # October #4112A0
-        11: (116, 29, 160),    # November #741DA0
-        12: (178, 53, 147),    # December #B23593
+        1: (237, 1, 138),     # #ED018A
+        2: (207, 26, 27),     # #CF1A1B
+        3: (240, 103, 48),    # #F06730
+        4: (240, 134, 34),    # #F08622
+        5: (233, 235, 40),    # #E9EB28
+        6: (180, 231, 66),    # #B4E742
+        7: (95, 198, 80),     # #5FC650
+        8: (31, 165, 166),    # #1FA5A6
+        9: (27, 26, 241),     # #1B1AF1
+        10: (65, 18, 160),    # #4112A0
+        11: (116, 29, 160),   # #741DA0
+        12: (178, 53, 147),   # #B23593
     }
 
     # Draw cells (sequential from Jan 1, vertical Monday..Sunday, wrap to next column)
     def _intensity_color(hours: float, month: int) -> tuple[int, int, int, int]:
+        # 0시간은 공백으로 표시
         if hours <= 0:
             return (229, 231, 235, 255)  # #e5e7eb (empty cells - light gray)
-        t = max(0.0, min(1.0, hours / max(1e-6, cap_hours)))
-        # Full gradient: white (t=0) to full color (t=1)
-        end_rgb = month_colors.get(month, (23, 133, 12))  # fallback to green
-        # Start from white (255, 255, 255) for full gradient
-        r = int(round(255 + (end_rgb[0] - 255) * t))
-        g = int(round(255 + (end_rgb[1] - 255) * t))
-        b = int(round(255 + (end_rgb[2] - 255) * t))
+        
+        # 해당 월의 최대 색상 가져오기
+        base_color = month_colors.get(month, (23, 133, 12))
+        
+        # 7단계 그라데이션 적용
+        # 시간대별 강도 계산
+        if hours >= 12.0:
+            t = 1.0  # 7단계: 12시간 이상 (100% 강도)
+        elif hours >= 8.57:
+            t = 0.8571  # 6단계: 8시간 34분 ~ 12시간 미만 (85.71% 강도)
+        elif hours >= 6.86:
+            t = 0.7143  # 5단계: 6시간 52분 ~ 8시간 34분 미만 (71.43% 강도)
+        elif hours >= 5.14:
+            t = 0.5714  # 4단계: 5시간 9분 ~ 6시간 52분 미만 (57.14% 강도)
+        elif hours >= 3.43:
+            t = 0.4286  # 3단계: 3시간 26분 ~ 5시간 9분 미만 (42.86% 강도)
+        elif hours >= 1.71:
+            t = 0.2857  # 2단계: 1시간 43분 ~ 3시간 26분 미만 (28.57% 강도)
+        else:
+            t = 0.1429  # 1단계: 1초 ~ 1시간 43분 미만 (14.29% 강도)
+        
+        # 흰색(255, 255, 255)에서 최대 색상으로 그라데이션
+        r = int(round(255 + (base_color[0] - 255) * t))
+        g = int(round(255 + (base_color[1] - 255) * t))
+        b = int(round(255 + (base_color[2] - 255) * t))
         return (r, g, b, 255)
 
     # Track month-wise occupied cells to derive precise polygon outlines later
     month_cells: dict[int, set[tuple[int, int]]] = {m: set() for m in range(1, 13)}
-
+    
     c = 0
     r = start_row
     d = jan1
@@ -814,11 +833,12 @@ def render_annual_grass_image(
             month_labels_to_draw.append((c, f"{d.month}월"))
         iso = d.isoformat()
         hours = float(hours_map.get(iso, 0.0))
-        color = _intensity_color(hours, d.month)
+        color = _intensity_color(hours, d.month)  # 월 정보 전달
         border = (* (empty_border_rgb if hours <= 0.0 else cell_border_rgb), 255)
         x0 = outer_margin + panel_pad + left_label_w + c * (cell + gap)
         y0 = outer_margin + panel_pad + header_h + r * (cell + gap)
         draw.rounded_rectangle((x0, y0, x0 + cell, y0 + cell), radius=3, fill=color, outline=border, width=1)
+        
         month_cells[d.month].add((c, r))
 
         # advance vertically; wrap to next column after Sunday

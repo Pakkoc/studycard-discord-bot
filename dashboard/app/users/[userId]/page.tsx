@@ -40,14 +40,12 @@ export default async function UserPage({ params, searchParams }: { params: Param
   const availYears = (years as number[]).length > 0 ? (years as number[]) : [currentYear];
   // Show only current year and any future years that exist (e.g., 2026 when the year changes)
   const yearsToShow = Array.from(new Set([currentYear, ...availYears.filter((y) => y >= currentYear)])).sort((a, b) => a - b);
-  const [calendarDataRes, guildCalendar, guildPerUserDailyMaxHours] = await Promise.all([
+  const [calendarDataRes, guildCalendar] = await Promise.all([
     fetchUserCalendarYear(guildId, userIdBig, calendarYear),
     fetchGuildCalendarYear(guildId, calendarYear),
-    fetchGuildPerUserDailyMaxHours(guildId, calendarYear),
   ]);
-  // 상한: 길드 전체의 "개인-하루 총합" 최대값의 85%
-  const base = Number(guildPerUserDailyMaxHours || 0);
-  const capHours = Math.max(1, Math.round((base * 0.85) * 100) / 100);
+  // 상한: 12시간 고정 (12시간 이상이면 최대 색상)
+  const capHours = 12;
 
   return (
     <main>
