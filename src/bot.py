@@ -81,6 +81,10 @@ async def main() -> None:
     bot = commands.Bot(command_prefix="!", intents=intents)
 
     levelup_delete_after_sec = get_env_int("LEVELUP_MESSAGE_DELETE_AFTER_SEC", 0)
+    
+    # Parse excluded voice channel IDs from env (comma-separated)
+    excluded_channels_env = os.getenv("EXCLUDED_VOICE_CHANNEL_IDS", "").replace(" ", "").strip()
+    EXCLUDED_VOICE_CHANNEL_IDS: set[int] = set(int(tok) for tok in excluded_channels_env.split(",") if tok.isdigit())
 
     def resolve_level_info(payload: dict) -> tuple[int, str]:
         """Return normalized level number and title for level-up messages."""
@@ -138,6 +142,9 @@ async def main() -> None:
                         except Exception:
                             pass
                         for ch in channels:
+                            # Skip excluded channels
+                            if ch.id in EXCLUDED_VOICE_CHANNEL_IDS:
+                                continue
                             for m in getattr(ch, "members", []) or []:
                                 if getattr(m, "bot", False):
                                     continue
@@ -446,8 +453,16 @@ async def main() -> None:
         before_channel = before.channel.id if before and before.channel else None
         after_channel = after.channel.id if after and after.channel else None
 
+        # Check if the channel is excluded from tracking
+        is_before_excluded = before_channel is not None and before_channel in EXCLUDED_VOICE_CHANNEL_IDS
+        is_after_excluded = after_channel is not None and after_channel in EXCLUDED_VOICE_CHANNEL_IDS
+
         # Joined a voice channel
         if before_channel is None and after_channel is not None:
+            # Don't start tracking if joining an excluded channel
+            if is_after_excluded:
+                logging.info("Voice session NOT started (excluded channel): user=%s guild=%s channel=%s", member.id, guild_id, after_channel)
+                return
             # ensure user exists on first activity as well (safety)
             try:
                 from core.database import ensure_user, set_user_nickname
@@ -468,7 +483,9 @@ async def main() -> None:
         ):
             now = datetime.now(timezone.utc)
             started_at = active_sessions.pop(key, None)
-            if started_at and record_voice_session:
+            
+            # Record the previous session only if it wasn't in an excluded channel
+            if started_at and record_voice_session and not is_before_excluded:
                 try:
                     duration = int((now - started_at).total_seconds())
                     await record_voice_session(member.id, guild_id, started_at, now, duration)
@@ -483,9 +500,12 @@ async def main() -> None:
                 except Exception as exc:
                     logging.warning("Failed to record voice move session: %s", exc)
 
-            # Start new session at the new channel immediately
-            active_sessions[key] = now
-            logging.info("Voice session restarted at new channel: user=%s guild=%s", member.id, guild_id)
+            # Start new session at the new channel only if it's not excluded
+            if not is_after_excluded:
+                active_sessions[key] = now
+                logging.info("Voice session restarted at new channel: user=%s guild=%s", member.id, guild_id)
+            else:
+                logging.info("Voice session NOT restarted (excluded channel): user=%s guild=%s channel=%s", member.id, guild_id, after_channel)
             return
 
         # Left a voice channel completely
@@ -493,6 +513,12 @@ async def main() -> None:
             started_at = active_sessions.pop(key, None)
             if not started_at:
                 return
+            
+            # Don't record if leaving from an excluded channel
+            if is_before_excluded:
+                logging.info("Voice session ended (excluded channel, not recorded): user=%s guild=%s channel=%s", member.id, guild_id, before_channel)
+                return
+            
             ended_at = datetime.now(timezone.utc)
             duration = int((ended_at - started_at).total_seconds())
             logging.info(
