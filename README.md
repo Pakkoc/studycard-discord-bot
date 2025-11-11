@@ -41,24 +41,24 @@
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="ex-image/소용돌이_학생증.png" alt="소용돌이 학생증" width="100%"/>
+      <img src="ex-image/student ID/소용돌이_학생증.png" alt="소용돌이 학생증" width="100%"/>
       <br/>
       <b>🦋 소용돌이</b>
     </td>
     <td align="center" width="50%">
-      <img src="ex-image/펭도리야_학생증.png" alt="펭도리야 학생증" width="100%"/>
+      <img src="ex-image/student ID/펭도리야_학생증.png" alt="펭도리야 학생증" width="100%"/>
       <br/>
       <b>🐧 펭도리야</b>
     </td>
   </tr>
   <tr>
     <td align="center" width="50%">
-      <img src="ex-image/노블래빗_학생증.png" alt="노블래빗 학생증" width="100%"/>
+      <img src="ex-image/student ID/노블래빗_학생증.png" alt="노블래빗 학생증" width="100%"/>
       <br/>
       <b>🐰 노블래빗</b>
     </td>
     <td align="center" width="50%">
-      <img src="ex-image/볼리베어_학생증.png" alt="볼리베어 학생증" width="100%"/>
+      <img src="ex-image/student ID/볼리베어_학생증.png" alt="볼리베어 학생증" width="100%"/>
       <br/>
       <b>🐻‍❄️ 볼리베어</b>
     </td>
@@ -66,6 +66,39 @@
 </table>
 
 각 학생증에는 **프로필 이미지, 이름, 학번, 기숙사, 학년, 레벨, XP 진행도, 오늘/주/월/누적 학습시간, 월간 출석 캘린더**가 포함됩니다.
+
+## 🌱 잔디 예시
+
+GitHub 스타일의 연간 학습 활동 히트맵으로 꾸준함을 시각화하세요:
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="ex-image/grass/소용돌이_잔디.png" alt="소용돌이 잔디" width="100%"/>
+      <br/>
+      <b>🦋 소용돌이</b>
+    </td>
+    <td align="center" width="50%">
+      <img src="ex-image/grass/펭도리아_잔디.png" alt="펭도리아 잔디" width="100%"/>
+      <br/>
+      <b>🐧 펭도리야</b>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="ex-image/grass/노블래빗_잔디.png" alt="노블래빗 잔디" width="100%"/>
+      <br/>
+      <b>🐰 노블래빗</b>
+    </td>
+    <td align="center" width="50%">
+      <img src="ex-image/grass/볼리베어_잔디.png" alt="볼리베어 잔디" width="100%"/>
+      <br/>
+      <b>🐻‍❄️ 볼리베어</b>
+    </td>
+  </tr>
+</table>
+
+잔디 캘린더는 **1년간의 일일 학습 시간을 색상 강도로 표현**하여, 꾸준한 학습 습관을 한눈에 확인할 수 있습니다.
 
 ## 🎮 사용 방법
 
@@ -148,7 +181,6 @@ EXCLUDED_VOICE_CHANNEL_IDS=1234567890,9876543210
 ## 🚀 로드맵
 
 ### 향후 계획 (Phase 2+)
-- 🌱 잔디 색상 월별 구별
 - 📊 관리자용 웹 대시보드 확장
 - 🤖 AI 기반 학습 분석 리포트
 
