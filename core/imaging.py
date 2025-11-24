@@ -793,7 +793,7 @@ def render_annual_grass_image(
     def _intensity_color(hours: float, month: int) -> tuple[int, int, int, int]:
         # 0시간은 공백으로 표시
         if hours <= 0:
-            return (229, 231, 235, 255)  # #e5e7eb (empty cells - light gray)
+            return (255, 255, 255, 255)  # #FFFFFF (empty cells - white)
         
         # 해당 월의 최대 색상 가져오기
         base_color = month_colors.get(month, (23, 133, 12))
