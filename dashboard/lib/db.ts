@@ -6,11 +6,10 @@ declare global {
 }
 
 function createPool(): Pool {
-  // Development convenience: avoid self-signed cert issues locally only
-  if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-process-env
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-  }
+  // Supabase uses certificates that may not be in the default trust chain.
+  // Disable strict TLS validation for database connections.
+  // eslint-disable-next-line no-process-env
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not set");
