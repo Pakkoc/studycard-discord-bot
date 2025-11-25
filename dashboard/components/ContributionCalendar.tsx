@@ -10,6 +10,22 @@ type Props = {
   capHours?: number; // optional external cap (e.g., guild-wide max * 0.9)
 };
 
+// 월별 최대 색상 정의 (/잔디 명령어와 동일)
+const MONTH_COLORS: Record<number, { r: number; g: number; b: number }> = {
+  1: { r: 237, g: 1, b: 138 },     // #ED018A
+  2: { r: 207, g: 26, b: 27 },     // #CF1A1B
+  3: { r: 240, g: 103, b: 48 },    // #F06730
+  4: { r: 240, g: 134, b: 34 },    // #F08622
+  5: { r: 233, g: 235, b: 40 },    // #E9EB28
+  6: { r: 180, g: 231, b: 66 },    // #B4E742
+  7: { r: 95, g: 198, b: 80 },     // #5FC650
+  8: { r: 31, g: 165, b: 166 },    // #1FA5A6
+  9: { r: 27, g: 26, b: 241 },     // #1B1AF1
+  10: { r: 65, g: 18, b: 160 },    // #4112A0
+  11: { r: 116, g: 29, b: 160 },   // #741DA0
+  12: { r: 178, g: 53, b: 147 },   // #B23593
+};
+
 export default function ContributionCalendar({ year, days, onSelectDate, capHours }: Props) {
   const map = useMemo(() => {
     const m = new Map<string, CalendarDay>();
@@ -75,11 +91,14 @@ export default function ContributionCalendar({ year, days, onSelectDate, capHour
           ))}
         </div>
       </div>
-      {/* Legend vertical (많음 → 적음) */}
-      <div style={{ display: "grid", gridTemplateRows: "auto 112px auto", rowGap: 6, color: "#6b7280", fontSize: 12 }}>
-        <span style={{ textAlign: "center" }}>많음</span>
-        <div style={{ width: 12, height: 112, borderRadius: 2, border: "1px solid #e5e7eb", background: "linear-gradient(to bottom, #ed008c, #d0191b, #f06730, #f08622, #e9eb28, #b4e742, #5fc650, #1fa5a6, #761ca2, #b23593)" }} />
-        <span style={{ textAlign: "center" }}>적음</span>
+      {/* Legend: 월별 색상 표시 (1월~12월) */}
+      <div style={{ display: "grid", gridTemplateRows: "repeat(12, 14px)", rowGap: 4, marginTop: 20, color: "#6b7280", fontSize: 10 }}>
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
+          <div key={m} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 2, border: "1px solid #d1d5db", background: `rgb(${MONTH_COLORS[m].r}, ${MONTH_COLORS[m].g}, ${MONTH_COLORS[m].b})` }} />
+            <span>{m}월</span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -89,14 +108,15 @@ function Cell({ iso, data, maxHours, onClick }: { iso: string; data?: CalendarDa
   const hours = Math.round(((data?.seconds || 0) / 3600) * 100) / 100;
   const d = new Date(iso);
   const day = d.getUTCDate();
-  // 0시간은 공백으로 표시, 1초 이상이면 색상 적용
-  const color = hours <= 0 ? "#e5e7eb" : intensityColor(Math.max(0, Math.min(1, hours / maxHours)));
+  const month = d.getUTCMonth() + 1; // 1-12
+  // 0시간은 흰색으로 표시 (/잔디 명령어와 동일), 1초 이상이면 월별 색상 적용
+  const color = hours <= 0 ? "#ffffff" : intensityColorByMonth(Math.max(0, Math.min(1, hours / maxHours)), month);
   const title = `${iso}\n총 ${hours}시간, ${data?.sessions || 0}세션`;
   const inYear = true; // we include prev/next spillover weeks like GitHub
-  
+
   // 매월 1일인지 확인
   const isFirstOfMonth = day === 1;
-  
+
   return (
     <div
       role="button"
@@ -135,13 +155,14 @@ function LegendBox({ color }: { color: string }) {
   return <span style={{ width: 12, height: 12, background: color, display: "inline-block", borderRadius: 2, border: "1px solid #e5e7eb" }} />;
 }
 
-function intensityColor(t: number) {
+// 월별 색상 적용 (/잔디 명령어와 동일한 7단계 그라데이션)
+function intensityColorByMonth(t: number, month: number) {
   const t_raw = Math.max(0, Math.min(1, t));
-  
+
   // 7단계 그라데이션 적용 (1초 이상이면 최소 1단계 보장)
   // 7단계는 12시간(100%) 이상
   let clamped: number;
-  
+
   // 100% 이상이면 7단계 (최대 색상)
   if (t_raw >= 1.0) {
     clamped = 1.0;  // 7단계: 12시간 이상
@@ -161,10 +182,10 @@ function intensityColor(t: number) {
       clamped = 0.8571;  // 6단계: 8시간 34분 ~ 12시간 미만
     }
   }
-  
-  // Single color scheme: #17850c (dark green)
-  const baseColor = { r: 23, g: 133, b: 12 };
-  
+
+  // 월별 색상 사용 (/잔디 명령어와 동일)
+  const baseColor = MONTH_COLORS[month] || { r: 23, g: 133, b: 12 };
+
   // Gradient: white to full color
   const r = Math.round(255 + (baseColor.r - 255) * clamped);
   const g = Math.round(255 + (baseColor.g - 255) * clamped);
