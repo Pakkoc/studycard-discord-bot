@@ -65,33 +65,58 @@ export default function ContributionCalendar({ year, days, onSelectDate, capHour
     weeks[widx].push(isInYear ? iso : null);
   }
 
+  // 월 레이블 중복 방지를 위한 처리
+  const monthLabels = useMemo(() => {
+    const labels: (string | null)[] = [];
+    let lastMonth = 0;
+    weeks.forEach((w) => {
+      const firstValidDate = w.find(d => d !== null);
+      if (firstValidDate) {
+        const d = new Date(firstValidDate);
+        const month = d.getUTCMonth() + 1;
+        const day = d.getUTCDate();
+        // 해당 월의 첫 번째 주에만 레이블 표시 (중복 방지)
+        if (month !== lastMonth && day <= 7) {
+          labels.push(`${month}월`);
+          lastMonth = month;
+        } else {
+          labels.push(null);
+        }
+      } else {
+        labels.push(null);
+      }
+    });
+    return labels;
+  }, [weeks]);
+
   return (
-    <div style={{ display: "flex", gap: 12 }}>
-      {/* Y labels - 월요일 시작 */}
-      <div style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4, marginTop: 20, color: "#6b7280", fontSize: 12 }}>
-        <span>월</span>
-        <span>화</span>
-        <span>수</span>
-        <span>목</span>
-        <span>금</span>
-        <span>토</span>
-        <span>일</span>
+    <div style={{ display: "flex", gap: 8, marginLeft: 16 }}>
+      {/* Y labels - 월요일 시작, 그리드와 정렬 */}
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {/* 월 레이블 영역과 높이 맞춤 */}
+        <div style={{ height: 18 }} />
+        {/* 요일 레이블 */}
+        <div style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4, color: "#6b7280", fontSize: 12 }}>
+          <span>월</span>
+          <span>화</span>
+          <span>수</span>
+          <span>목</span>
+          <span>금</span>
+          <span>토</span>
+          <span>일</span>
+        </div>
       </div>
       <div>
-        {/* Month labels - 해당 연도의 날짜만 체크 */}
-        <div style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "14px", columnGap: 4, color: "#6b7280", fontSize: 12, marginLeft: 2 }}>
-          {weeks.map((w, i) => {
-            // 해당 주에서 첫 번째 유효한 날짜 찾기
-            const firstValidDate = w.find(d => d !== null);
-            return (
-              <span key={i} style={{ gridColumn: String(i + 1) }}>
-                {monthLabel(firstValidDate ?? undefined)}
-              </span>
-            );
-          })}
+        {/* Month labels - 중복 방지 */}
+        <div style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "14px", columnGap: 4, color: "#6b7280", fontSize: 12, height: 18 }}>
+          {monthLabels.map((label, i) => (
+            <span key={i} style={{ gridColumn: String(i + 1), whiteSpace: "nowrap" }}>
+              {label ?? ""}
+            </span>
+          ))}
         </div>
         {/* Grid */}
-        <div style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "14px", columnGap: 4, marginTop: 4 }}>
+        <div style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "14px", columnGap: 4 }}>
           {weeks.map((w, wi) => (
             <div key={wi} style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4 }}>
               {w.map((iso, di) => (
@@ -141,14 +166,6 @@ function Cell({ iso, data, maxHours, onClick }: { iso: string | null; data?: Cal
       }}
     />
   );
-}
-
-function monthLabel(iso?: string) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const m = d.getUTCMonth() + 1;
-  // Show label only on the first week of a month
-  return d.getUTCDate() <= 7 ? `${m}월` : "";
 }
 
 // 월별 색상 적용 (/잔디 명령어와 동일한 7단계 그라데이션)
