@@ -22,30 +22,80 @@ export default async function UserPage({ params, searchParams }: { params: Param
   const guildIdFromEnv = process.env.DEFAULT_GUILD_ID || process.env.DEV_GUILD_ID || "";
   const hasGuild = Boolean(guildIdFromEnv);
   const guildId = hasGuild ? BigInt(guildIdFromEnv) : 0n;
-  const userIdBig = BigInt(userId);
 
-  const [detail, logs, trend, monthly, heat, years] = await Promise.all([
-    fetchUserDetail(guildId, userIdBig),
-    fetchUserEntryLogs(guildId, userIdBig, 100),
-    fetchUserDailyTrend(guildId, userIdBig, 30),
-    fetchUserMonthlyTrend(guildId, userIdBig, 12),
-    fetchUserWeekdayHourHeatmap(guildId, userIdBig, 90),
-    fetchUserAvailableYears(guildId, userIdBig),
-  ]);
+  let errorMessage: string | null = null;
+  let detail: any = null;
+  let logs: any[] = [];
+  let trend: any[] = [];
+  let monthly: any[] = [];
+  let heat: any[] = [];
+  let years: number[] = [];
+  let calendarDataRes: any[] = [];
+  let guildCalendar: any[] = [];
 
   // Year param
   const currentYear = new Date().getFullYear();
   const parsedYear = Number((searchParams?.year as string) || currentYear);
   const calendarYear = Number.isFinite(parsedYear) && parsedYear >= 2000 && parsedYear <= 3000 ? parsedYear : currentYear;
-  const availYears = (years as number[]).length > 0 ? (years as number[]) : [currentYear];
-  // Show only current year and any future years that exist (e.g., 2026 when the year changes)
+
+  try {
+    const userIdBig = BigInt(userId);
+
+    const results = await Promise.all([
+      fetchUserDetail(guildId, userIdBig),
+      fetchUserEntryLogs(guildId, userIdBig, 100),
+      fetchUserDailyTrend(guildId, userIdBig, 30),
+      fetchUserMonthlyTrend(guildId, userIdBig, 12),
+      fetchUserWeekdayHourHeatmap(guildId, userIdBig, 90),
+      fetchUserAvailableYears(guildId, userIdBig),
+    ]);
+
+    detail = results[0];
+    logs = results[1] || [];
+    trend = results[2] || [];
+    monthly = results[3] || [];
+    heat = results[4] || [];
+    years = (results[5] as number[]) || [];
+
+    const availYears = years.length > 0 ? years : [currentYear];
+    const yearsToShow = Array.from(new Set([currentYear, ...availYears.filter((y) => y >= currentYear)])).sort((a, b) => a - b);
+
+    const calendarResults = await Promise.all([
+      fetchUserCalendarYear(guildId, userIdBig, calendarYear),
+      fetchGuildCalendarYear(guildId, calendarYear),
+    ]);
+    calendarDataRes = calendarResults[0] || [];
+    guildCalendar = calendarResults[1] || [];
+  } catch (error) {
+    console.error("[UserPage] Error loading user data:", error);
+    errorMessage = "사용자 데이터를 불러오는 중 오류가 발생했습니다.";
+  }
+
+  const availYears = years.length > 0 ? years : [currentYear];
   const yearsToShow = Array.from(new Set([currentYear, ...availYears.filter((y) => y >= currentYear)])).sort((a, b) => a - b);
-  const [calendarDataRes, guildCalendar] = await Promise.all([
-    fetchUserCalendarYear(guildId, userIdBig, calendarYear),
-    fetchGuildCalendarYear(guildId, calendarYear),
-  ]);
   // 상한: 12시간 고정 (12시간 이상이면 최대 색상)
   const capHours = 12;
+
+  if (errorMessage) {
+    return (
+      <main>
+        <div className="panel" style={{ marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div className="title">사용자 상세</div>
+            <div className="subtle">최근 활동, 출입기록, 시간대 패턴</div>
+          </div>
+          <a href="/" aria-label="목록으로" title="목록으로" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, border: "1px solid var(--border)", borderRadius: 8, textDecoration: "none", color: "var(--text)" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="20" height="20" aria-hidden="true">
+              <path d="M3 9.5l9-7 9 7"/>
+              <path d="M9 22V12h6v10"/>
+              <path d="M21 10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V10"/>
+            </svg>
+          </a>
+        </div>
+        <div className="panel">{errorMessage}</div>
+      </main>
+    );
+  }
 
   return (
     <main>

@@ -39,7 +39,8 @@ export default async function StatsPage() {
         fetchSessionLengthHistogram(guildId, 30),
       ]);
     } catch (e) {
-      console.error(e);
+      console.error("[StatsPage] Error loading stats:", e);
+      console.error("[StatsPage] Error details:", JSON.stringify(e, Object.getOwnPropertyNames(e)));
       errorMessage = "통계를 불러오는 중 오류가 발생했습니다.";
     }
   }
