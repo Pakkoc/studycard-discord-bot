@@ -47,21 +47,27 @@ export default function ContributionCalendar({ year, days, onSelectDate, capHour
   }, [days, capHours]);
 
   const first = new Date(Date.UTC(year, 0, 1));
-  const last = new Date(Date.UTC(year + 1, 0, 1));
-  // Align to week start (Sunday) for GitHub-like layout
+  const last = new Date(Date.UTC(year, 11, 31)); // 12월 31일까지만
+  // Align to week start (Monday) for GitHub-like layout - 월요일 시작
   const start = new Date(first);
-  start.setUTCDate(first.getUTCDate() - first.getUTCDay());
-  const weeks: string[][] = [];
-  for (let d = new Date(start); d < last || d.getUTCDay() !== 0; d.setUTCDate(d.getUTCDate() + 1)) {
+  const firstDayOfWeek = first.getUTCDay(); // 0=일, 1=월, ...
+  // 월요일(1)을 기준으로 정렬
+  const offset = (firstDayOfWeek + 6) % 7; // 월요일=0, 화요일=1, ... 일요일=6
+  start.setUTCDate(first.getUTCDate() - offset);
+
+  const weeks: (string | null)[][] = [];
+  for (let d = new Date(start); d <= last || d.getUTCDay() !== 1; d.setUTCDate(d.getUTCDate() + 1)) {
     const iso = d.toISOString().slice(0, 10);
     const widx = Math.floor((d.getTime() - start.getTime()) / (7 * 86400000));
     if (!weeks[widx]) weeks[widx] = [];
-    weeks[widx].push(iso);
+    // 해당 연도에 속하지 않는 날은 null로 표시
+    const isInYear = d.getUTCFullYear() === year;
+    weeks[widx].push(isInYear ? iso : null);
   }
 
   return (
     <div style={{ display: "flex", gap: 12 }}>
-      {/* Y labels */}
+      {/* Y labels - 월요일 시작 */}
       <div style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4, marginTop: 20, color: "#6b7280", fontSize: 12 }}>
         <span>월</span>
         <span>화</span>
@@ -72,50 +78,51 @@ export default function ContributionCalendar({ year, days, onSelectDate, capHour
         <span>일</span>
       </div>
       <div>
-        {/* Month labels */}
+        {/* Month labels - 해당 연도의 날짜만 체크 */}
         <div style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "14px", columnGap: 4, color: "#6b7280", fontSize: 12, marginLeft: 2 }}>
-          {weeks.map((w, i) => (
-            <span key={i} style={{ gridColumn: String(i + 1) }}>
-              {monthLabel(w[0])}
-            </span>
-          ))}
+          {weeks.map((w, i) => {
+            // 해당 주에서 첫 번째 유효한 날짜 찾기
+            const firstValidDate = w.find(d => d !== null);
+            return (
+              <span key={i} style={{ gridColumn: String(i + 1) }}>
+                {monthLabel(firstValidDate ?? undefined)}
+              </span>
+            );
+          })}
         </div>
         {/* Grid */}
         <div style={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "14px", columnGap: 4, marginTop: 4 }}>
           {weeks.map((w, wi) => (
-          <div key={wi} style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4 }}>
-              {([...w.slice(1, 7), w[0]]).map((iso) => (
-                <Cell key={iso} iso={iso} data={map.get(iso)} maxHours={maxHours} onClick={() => onSelectDate?.(iso)} />
+            <div key={wi} style={{ display: "grid", gridTemplateRows: "repeat(7, 14px)", rowGap: 4 }}>
+              {w.map((iso, di) => (
+                <Cell
+                  key={iso ?? `empty-${wi}-${di}`}
+                  iso={iso}
+                  data={iso ? map.get(iso) : undefined}
+                  maxHours={maxHours}
+                  onClick={() => iso && onSelectDate?.(iso)}
+                />
               ))}
             </div>
           ))}
         </div>
       </div>
-      {/* Legend: 월별 색상 표시 (1월~12월) */}
-      <div style={{ display: "grid", gridTemplateRows: "repeat(12, 14px)", rowGap: 4, marginTop: 20, color: "#6b7280", fontSize: 10 }}>
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
-          <div key={m} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <div style={{ width: 12, height: 12, borderRadius: 2, border: "1px solid #d1d5db", background: `rgb(${MONTH_COLORS[m].r}, ${MONTH_COLORS[m].g}, ${MONTH_COLORS[m].b})` }} />
-            <span>{m}월</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
 
-function Cell({ iso, data, maxHours, onClick }: { iso: string; data?: CalendarDay; maxHours: number; onClick?: () => void }) {
+function Cell({ iso, data, maxHours, onClick }: { iso: string | null; data?: CalendarDay; maxHours: number; onClick?: () => void }) {
+  // 해당 연도에 존재하지 않는 날은 빈 공간으로 표시
+  if (!iso) {
+    return <div style={{ width: 14, height: 14 }} />;
+  }
+
   const hours = Math.round(((data?.seconds || 0) / 3600) * 100) / 100;
   const d = new Date(iso);
-  const day = d.getUTCDate();
   const month = d.getUTCMonth() + 1; // 1-12
   // 0시간은 흰색으로 표시 (/잔디 명령어와 동일), 1초 이상이면 월별 색상 적용
   const color = hours <= 0 ? "#ffffff" : intensityColorByMonth(Math.max(0, Math.min(1, hours / maxHours)), month);
   const title = `${iso}\n총 ${hours}시간, ${data?.sessions || 0}세션`;
-  const inYear = true; // we include prev/next spillover weeks like GitHub
-
-  // 매월 1일인지 확인
-  const isFirstOfMonth = day === 1;
 
   return (
     <div
@@ -131,15 +138,8 @@ function Cell({ iso, data, maxHours, onClick }: { iso: string; data?: CalendarDa
         // Make blanks and light tones visible across themes
         boxShadow: "inset 0 0 0 1px #d1d5db",
         cursor: "pointer",
-        opacity: inYear ? 1 : 0.35,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 8,
       }}
-    >
-      {isFirstOfMonth && "📅"}
-    </div>
+    />
   );
 }
 
@@ -149,10 +149,6 @@ function monthLabel(iso?: string) {
   const m = d.getUTCMonth() + 1;
   // Show label only on the first week of a month
   return d.getUTCDate() <= 7 ? `${m}월` : "";
-}
-
-function LegendBox({ color }: { color: string }) {
-  return <span style={{ width: 12, height: 12, background: color, display: "inline-block", borderRadius: 2, border: "1px solid #e5e7eb" }} />;
 }
 
 // 월별 색상 적용 (/잔디 명령어와 동일한 7단계 그라데이션)
