@@ -19,7 +19,12 @@ function createPool(): Pool {
     connectionString: databaseUrl,
     // Supabase requires SSL. Disable strict cert validation for local/dev.
     ssl: { rejectUnauthorized: false },
-    max: 5,
+    // Supabase 무료 플랜은 동시 연결 수가 제한됨
+    max: 2,
+    // 연결 대기 시간 (10초)
+    connectionTimeoutMillis: 10000,
+    // 유휴 연결 종료 시간 (30초)
+    idleTimeoutMillis: 30000,
   };
   return new Pool(config);
 }
