@@ -58,8 +58,9 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
 
   return (
     <main>
-      <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="title">마법사관학교 학생 목록</div>
+      <div className="panel" style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="title" style={{ margin: 0 }}>마법사관학교 학생 목록</div>
+        <LogoutButton />
       </div>
       <form
         method="get"
@@ -262,4 +263,24 @@ const pageNumActive: React.CSSProperties = {
   fontWeight: 700,
 };
 
+function LogoutButton() {
+  return (
+    <form action="/api/auth/logout" method="POST" style={{ margin: 0 }}>
+      <button
+        type="submit"
+        style={{
+          padding: "8px 16px",
+          backgroundColor: "transparent",
+          border: "1px solid #ef4444",
+          color: "#ef4444",
+          borderRadius: 8,
+          cursor: "pointer",
+          fontSize: 14,
+        }}
+      >
+        로그아웃
+      </button>
+    </form>
+  );
+}
 
