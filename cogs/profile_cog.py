@@ -4,7 +4,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from io import BytesIO
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+# 한국 시간대 (KST, UTC+9)
+KST = timezone(timedelta(hours=9))
 import os
 
 from core.database import fetch_user_stats, fetch_month_streak_days
@@ -91,7 +94,7 @@ def has_scholar_role(member: discord.Member) -> bool:
 def compute_grade_by_join_date(joined_at: datetime | None, now: datetime | None = None) -> int:
     if joined_at is None:
         return 1
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(KST)
     days = (now.date() - joined_at.date()).days
     if days < 0:
         return 1
@@ -178,7 +181,7 @@ class ProfileCog(commands.Cog):
         joined = getattr(target, "joined_at", None)
         student_no = stats.get("student_no") or ""
         if not student_no and joined:
-            base = joined.astimezone(timezone.utc).strftime("%y%m%d")
+            base = joined.astimezone(KST).strftime("%y%m%d")
             same_day = [m for m in interaction.guild.members if m.joined_at and m.joined_at.date() == joined.date() and not m.bot]
             same_day_sorted = sorted(same_day, key=lambda m: (m.joined_at, m.id))
             try:
@@ -273,7 +276,7 @@ class ProfileCog(commands.Cog):
         joined = getattr(target, "joined_at", None)
         student_no = stats.get("student_no") or ""
         if not student_no and joined:
-            base = joined.astimezone(timezone.utc).strftime("%y%m%d")
+            base = joined.astimezone(KST).strftime("%y%m%d")
             same_day = [m for m in interaction.guild.members if m.joined_at and m.joined_at.date() == joined.date() and not m.bot]
             same_day_sorted = sorted(same_day, key=lambda m: (m.joined_at, m.id))
             try:
@@ -341,7 +344,7 @@ class ProfileCog(commands.Cog):
         if interaction.guild is None:
             await interaction.response.send_message("길드 컨텍스트에서만 사용할 수 있습니다.", ephemeral=True)
             return
-        y = year or datetime.now(timezone.utc).year
+        y = year or datetime.now(KST).year
 
         try:
             from core.database import (

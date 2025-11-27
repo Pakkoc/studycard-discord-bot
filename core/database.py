@@ -1,6 +1,9 @@
 import asyncio
 import os
 from datetime import date, datetime, timezone, timedelta
+
+# 한국 시간대 (KST, UTC+9)
+KST = timezone(timedelta(hours=9))
 from typing import Optional, Dict
 
 import asyncpg
@@ -659,7 +662,7 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
             if not open_sessions:
                 return 0
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(KST)
             finalized_count = 0
             for rec in open_sessions:
                 session_id = rec["session_id"]

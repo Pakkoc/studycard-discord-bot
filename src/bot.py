@@ -6,7 +6,10 @@ from pathlib import Path
 
 import discord
 from discord.ext import commands
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+# 한국 시간대 (KST, UTC+9)
+KST = timezone(timedelta(hours=9))
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -128,7 +131,7 @@ async def main() -> None:
 
             # Snapshot currently connected voice members and start fresh sessions immediately
             try:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(KST)
                 started = 0
                 for g in bot.guilds:
                     try:
@@ -216,7 +219,7 @@ async def main() -> None:
                             user_id_to_nick[m.id] = m.nick or m.display_name or str(m)
                             # compute student number base (YYMMDD + order)
                             if m.joined_at:
-                                base = m.joined_at.astimezone(timezone.utc).strftime("%y%m%d")
+                                base = m.joined_at.astimezone(KST).strftime("%y%m%d")
                                 same_day = [mm for mm in g.members if mm.joined_at and mm.joined_at.date() == m.joined_at.date() and not mm.bot]
                                 same_day_sorted = sorted(same_day, key=lambda mm: (mm.joined_at, mm.id))
                                 try:
@@ -231,7 +234,7 @@ async def main() -> None:
                                 if not m.bot:
                                     user_id_to_nick[m.id] = m.nick or m.display_name or str(m)
                                     if m.joined_at:
-                                        base = m.joined_at.astimezone(timezone.utc).strftime("%y%m%d")
+                                        base = m.joined_at.astimezone(KST).strftime("%y%m%d")
                                         same_day = [mm for mm in g.members if mm.joined_at and mm.joined_at.date() == m.joined_at.date() and not mm.bot]
                                         same_day_sorted = sorted(same_day, key=lambda mm: (mm.joined_at, mm.id))
                                         try:
@@ -275,7 +278,7 @@ async def main() -> None:
             await set_user_nickname(member.id, member.guild.id, nickname)
             # Store student number
             if member.joined_at:
-                base = member.joined_at.astimezone(timezone.utc).strftime("%y%m%d")
+                base = member.joined_at.astimezone(KST).strftime("%y%m%d")
                 same_day = [m for m in member.guild.members if m.joined_at and m.joined_at.date() == member.joined_at.date() and not m.bot]
                 same_day_sorted = sorted(same_day, key=lambda m: (m.joined_at, m.id))
                 try:
@@ -471,7 +474,7 @@ async def main() -> None:
                 await set_user_nickname(member.id, guild_id, nickname)
             except Exception:
                 pass
-            active_sessions[key] = datetime.now(timezone.utc)
+            active_sessions[key] = datetime.now(KST)
             logging.info("Voice session started: user=%s guild=%s", member.id, guild_id)
             return
 
@@ -481,7 +484,7 @@ async def main() -> None:
             and after_channel is not None
             and before_channel != after_channel
         ):
-            now = datetime.now(timezone.utc)
+            now = datetime.now(KST)
             started_at = active_sessions.pop(key, None)
             
             # Record the previous session only if it wasn't in an excluded channel
@@ -519,7 +522,7 @@ async def main() -> None:
                 logging.info("Voice session ended (excluded channel, not recorded): user=%s guild=%s channel=%s", member.id, guild_id, before_channel)
                 return
             
-            ended_at = datetime.now(timezone.utc)
+            ended_at = datetime.now(KST)
             duration = int((ended_at - started_at).total_seconds())
             logging.info(
                 "Voice session ended: user=%s guild=%s duration=%ss", member.id, guild_id, duration
