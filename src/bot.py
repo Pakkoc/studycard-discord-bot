@@ -136,6 +136,7 @@ async def main() -> None:
 
             # Snapshot currently connected voice members and start fresh sessions immediately
             try:
+                from core.database import start_voice_session
                 now = now_kst_naive()
                 started = 0
                 for g in bot.guilds:
@@ -168,6 +169,11 @@ async def main() -> None:
                                     await set_user_nickname(m.id, g.id, nickname)
                                 except Exception:
                                     pass
+                                # DB에 세션 시작 기록 (ended_at=NULL)
+                                try:
+                                    await start_voice_session(m.id, g.id, now)
+                                except Exception as db_exc:
+                                    logging.warning("Failed to start voice session in DB: %s", db_exc)
                                 active_sessions[key] = now
                                 started += 1
                     except Exception as gexc:
@@ -449,9 +455,10 @@ async def main() -> None:
     @bot.event
     async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         try:
-            from core.database import record_voice_session
+            from core.database import record_voice_session, start_voice_session
         except Exception:
             record_voice_session = None  # type: ignore
+            start_voice_session = None  # type: ignore
 
         guild_id = member.guild.id if member.guild else None
         if guild_id is None:
@@ -479,7 +486,14 @@ async def main() -> None:
                 await set_user_nickname(member.id, guild_id, nickname)
             except Exception:
                 pass
-            active_sessions[key] = now_kst_naive()
+            now = now_kst_naive()
+            # DB에 세션 시작 기록 (ended_at=NULL)
+            if start_voice_session:
+                try:
+                    await start_voice_session(member.id, guild_id, now)
+                except Exception as db_exc:
+                    logging.warning("Failed to start voice session in DB: %s", db_exc)
+            active_sessions[key] = now
             logging.info("Voice session started: user=%s guild=%s", member.id, guild_id)
             return
 
@@ -510,6 +524,12 @@ async def main() -> None:
 
             # Start new session at the new channel only if it's not excluded
             if not is_after_excluded:
+                # DB에 새 세션 시작 기록 (ended_at=NULL)
+                if start_voice_session:
+                    try:
+                        await start_voice_session(member.id, guild_id, now)
+                    except Exception as db_exc:
+                        logging.warning("Failed to start voice session in DB: %s", db_exc)
                 active_sessions[key] = now
                 logging.info("Voice session restarted at new channel: user=%s guild=%s", member.id, guild_id)
             else:

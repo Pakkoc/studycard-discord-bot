@@ -242,6 +242,28 @@ async def fetch_user_total_seconds(user_id: int, guild_id: int) -> int:
         )
         return int(row["total_seconds"]) if row else 0
 
+
+async def start_voice_session(user_id: int, guild_id: int, started_at: datetime) -> int:
+    """Insert a new voice session with ended_at=NULL (in progress).
+
+    Returns the session_id for later update.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_user_exists(conn, user_id, guild_id)
+        row = await conn.fetchrow(
+            """
+            INSERT INTO voice_sessions (user_id, guild_id, started_at, ended_at, duration_seconds)
+            VALUES ($1, $2, $3, NULL, 0)
+            RETURNING session_id
+            """,
+            user_id,
+            guild_id,
+            started_at,
+        )
+        return int(row["session_id"]) if row else 0
+
+
 async def record_voice_session(
     user_id: int,
     guild_id: int,
@@ -249,7 +271,10 @@ async def record_voice_session(
     ended_at: datetime,
     duration_seconds: int,
 ) -> Dict[str, int | str]:
-    """Insert a finished voice session and update aggregates in a transaction.
+    """Finish a voice session and update aggregates in a transaction.
+
+    If an open session (ended_at IS NULL) exists for the user, UPDATE it.
+    Otherwise, INSERT a new completed session.
 
     Returns a dict with keys: xp_gain, total_xp, old_level, new_level, level_name
     """
@@ -258,18 +283,31 @@ async def record_voice_session(
         async with conn.transaction():
             await ensure_user_exists(conn, user_id, guild_id)
 
-            # Insert session regardless of duration (already filtered by caller when needed)
-            await conn.execute(
+            # Try to update existing open session first
+            updated = await conn.execute(
                 """
-                INSERT INTO voice_sessions (user_id, guild_id, started_at, ended_at, duration_seconds)
-                VALUES ($1, $2, $3, $4, $5);
+                UPDATE voice_sessions
+                SET ended_at = $3, duration_seconds = $4
+                WHERE user_id = $1 AND guild_id = $2 AND ended_at IS NULL
                 """,
                 user_id,
                 guild_id,
-                started_at,
                 ended_at,
                 duration_seconds,
             )
+            # If no open session was updated, insert a new completed session
+            if updated == "UPDATE 0":
+                await conn.execute(
+                    """
+                    INSERT INTO voice_sessions (user_id, guild_id, started_at, ended_at, duration_seconds)
+                    VALUES ($1, $2, $3, $4, $5);
+                    """,
+                    user_id,
+                    guild_id,
+                    started_at,
+                    ended_at,
+                    duration_seconds,
+                )
 
             # Fetch previous aggregates for cumulative-based XP calculation
             from core.leveling import calculate_level, calculate_cumulative_xp_gain
