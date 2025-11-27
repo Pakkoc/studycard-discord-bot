@@ -1,5 +1,12 @@
 import { getPool } from "@/lib/db";
 
+/** 현재 KST 시간을 Date 객체로 반환 */
+function nowKST(): Date {
+  const now = new Date();
+  // UTC + 9시간 = KST
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000);
+}
+
 export type SummaryToday = {
   todayHours: number;
   dau: number;
@@ -10,18 +17,25 @@ export async function fetchSummaryToday(guildId: bigint): Promise<SummaryToday> 
   const pool = getPool();
   const client = await pool.connect();
   try {
+    // KST 기준 오늘 06:00 시작 시간 계산
+    const kst = nowKST();
+    const hour = kst.getUTCHours();
+    if (hour < 6) {
+      kst.setUTCDate(kst.getUTCDate() - 1);
+    }
+    kst.setUTCHours(6, 0, 0, 0);
+    const todayStartStr = kst.toISOString().slice(0, 19).replace('T', ' ');
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
-      WITH kstart AS (
-        SELECT ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s
-      )
       SELECT
-        COALESCE(SUM(CASE WHEN ended_at >= (SELECT s FROM kstart) THEN duration_seconds END), 0) AS today_seconds,
-        COALESCE(COUNT(DISTINCT CASE WHEN ended_at >= (SELECT s FROM kstart) THEN user_id END), 0) AS dau
+        COALESCE(SUM(CASE WHEN ended_at >= $2::timestamp THEN duration_seconds END), 0) AS today_seconds,
+        COALESCE(COUNT(DISTINCT CASE WHEN ended_at >= $2::timestamp THEN user_id END), 0) AS dau
       FROM voice_sessions
       WHERE guild_id = $1 AND ended_at IS NOT NULL
       `,
-      [guildId.toString()]
+      [guildId.toString(), todayStartStr]
     );
     const todaySeconds = Number(rows?.[0]?.today_seconds ?? 0);
     const dau = Number(rows?.[0]?.dau ?? 0);
@@ -39,23 +53,26 @@ export async function fetchDailyTrend(guildId: bigint, days = 30): Promise<Daily
   const pool = getPool();
   const client = await pool.connect();
   try {
-    const start = new Date();
-    start.setDate(start.getDate() - (days - 1));
+    // KST 기준 시작일 계산
+    const kstNow = nowKST();
+    const start = new Date(kstNow);
+    start.setUTCDate(start.getUTCDate() - (days - 1));
+    start.setUTCHours(0, 0, 0, 0);
+    const startStr = start.toISOString().slice(0, 19).replace('T', ' ');
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
-      WITH start_bound AS (
-        SELECT date_trunc('day', $2::timestamptz AT TIME ZONE 'Asia/Seoul') AS start_day
-      )
-      SELECT to_char(date_trunc('day', ended_at AT TIME ZONE 'Asia/Seoul'), 'YYYY-MM-DD') AS day_label,
+      SELECT to_char(date_trunc('day', ended_at), 'YYYY-MM-DD') AS day_label,
              SUM(duration_seconds) AS seconds,
              COUNT(DISTINCT user_id) AS dau
       FROM voice_sessions
       WHERE guild_id=$1 AND ended_at IS NOT NULL
-        AND (ended_at AT TIME ZONE 'Asia/Seoul') >= (SELECT start_day FROM start_bound)
+        AND ended_at >= $2::timestamp
       GROUP BY day_label
       ORDER BY day_label
       `,
-      [guildId.toString(), start]
+      [guildId.toString(), startStr]
     );
     const map = new Map<string, { seconds: number; dau: number }>();
     for (const r of rows) {
@@ -85,13 +102,18 @@ export async function fetchLeaderboard(
   const pool = getPool();
   const client = await pool.connect();
   try {
+    // KST 기준 현재 시간
+    const nowParam = nowKST().toISOString().slice(0, 19).replace('T', ' ');
+
     const boundColumn = period === "week" ? "week_start" : "month_start";
     const fieldExpr = `CASE WHEN vs.ended_at >= (SELECT ${boundColumn} FROM bounds) THEN vs.duration_seconds END`;
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const sql = `
       WITH bounds AS (
         SELECT
-          ((date_trunc('week',  now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS week_start,
-          ((date_trunc('month', now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS month_start
+          date_trunc('week', $2::timestamp) AS week_start,
+          date_trunc('month', $2::timestamp) AS month_start
       )
       SELECT u.user_id::text AS user_id, u.nickname,
              COALESCE(SUM(${fieldExpr}), 0) AS value_seconds
@@ -103,7 +125,7 @@ export async function fetchLeaderboard(
       ORDER BY value_seconds DESC
       LIMIT 20
     `;
-    const { rows } = await client.query(sql, [guildId.toString()]);
+    const { rows } = await client.query(sql, [guildId.toString(), nowParam]);
     return rows.map((r) => ({
       user_id: String(r.user_id),
       nickname: r.nickname ?? null,
@@ -158,13 +180,15 @@ export async function fetchSessionLengthHistogram(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    const start = new Date();
-    start.setDate(start.getDate() - days);
+    // KST 기준 시작일 계산
+    const kstNow = nowKST();
+    const start = new Date(kstNow);
+    start.setUTCDate(start.getUTCDate() - days);
+    const startStr = start.toISOString().slice(0, 19).replace('T', ' ');
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
-      WITH start_bound AS (
-        SELECT ($2::timestamptz AT TIME ZONE 'Asia/Seoul') AS start_at
-      )
       SELECT bucket, COUNT(*)::int AS count
       FROM (
         SELECT CASE
@@ -177,7 +201,7 @@ export async function fetchSessionLengthHistogram(
         END AS bucket
         FROM voice_sessions
         WHERE guild_id=$1 AND ended_at IS NOT NULL
-          AND (ended_at AT TIME ZONE 'Asia/Seoul') >= (SELECT start_at FROM start_bound)
+          AND ended_at >= $2::timestamp
       ) t
       GROUP BY bucket
       ORDER BY CASE bucket
@@ -188,7 +212,7 @@ export async function fetchSessionLengthHistogram(
         WHEN '60-120m' THEN 5
         ELSE 6 END
       `,
-      [guildId.toString(), start]
+      [guildId.toString(), startStr]
     );
     return rows.map((r) => ({ bucket: String(r.bucket), count: Number(r.count) }));
   } finally {

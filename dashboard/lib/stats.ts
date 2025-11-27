@@ -1,5 +1,24 @@
 import { getPool } from "@/lib/db";
 
+/** 현재 KST 시간을 Date 객체로 반환 */
+function nowKST(): Date {
+  const now = new Date();
+  // UTC + 9시간 = KST
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000);
+}
+
+/** KST 기준 오늘 06:00 시작 시간을 ISO string으로 반환 */
+function todayStartKST(): string {
+  const kst = nowKST();
+  const hour = kst.getUTCHours();
+  // 06:00 이전이면 전날 06:00 기준
+  if (hour < 6) {
+    kst.setUTCDate(kst.getUTCDate() - 1);
+  }
+  kst.setUTCHours(6, 0, 0, 0);
+  return kst.toISOString().slice(0, 19).replace('T', ' ');
+}
+
 export type GuildUserRow = {
   user_id: string; // serialized for JSON safety
   nickname: string | null;
@@ -78,12 +97,17 @@ export async function fetchGuildUserStats(
       params.push(`%${query.trim()}%`);
     }
 
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
+    const nowParam = nowKST().toISOString().slice(0, 19).replace('T', ' ');
+    params.push(nowParam);
+    const nowIdx = params.length;
+
     const sql = `
       WITH bounds AS (
         SELECT
-          ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS today_start,
-          ((date_trunc('week',  now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS week_start,
-          ((date_trunc('month', now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS month_start
+          (date_trunc('day', $${nowIdx}::timestamp - interval '6 hour') + interval '6 hour') AS today_start,
+          date_trunc('week', $${nowIdx}::timestamp) AS week_start,
+          date_trunc('month', $${nowIdx}::timestamp) AS month_start
       )
       SELECT
         u.user_id,
@@ -96,7 +120,7 @@ export async function fetchGuildUserStats(
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT today_start FROM bounds) THEN vs.duration_seconds END), 0) AS today_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT week_start FROM bounds) THEN vs.duration_seconds END), 0) AS week_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT month_start FROM bounds) THEN vs.duration_seconds END), 0) AS month_seconds,
-        to_char(u.last_seen_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS last_seen_at
+        to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
       FROM users u
       LEFT JOIN voice_sessions vs
         ON vs.user_id = u.user_id
@@ -179,20 +203,24 @@ export async function fetchGuildUserStatsPaged(
     const total = Number(countRows?.[0]?.cnt ?? 0);
 
     // Build main query with dynamic ORDER BY using a safe whitelist
-    // Note: we can reference aliases (today_seconds etc.) in ORDER BY
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const baseParams = [...params];
+    const nowParam = nowKST().toISOString().slice(0, 19).replace('T', ' ');
+    baseParams.push(nowParam);
     baseParams.push(limit);
     baseParams.push(offset);
 
-    const limitIdx = baseParams.length - 1; // offset is last, limit is previous
-    const offsetIdx = baseParams.length; // not used in query string directly below; indices are illustrative
+    // Parameter indices depend on whether there's a query filter
+    const nowIdx = query.length > 0 ? 3 : 2;
+    const limitIdx = query.length > 0 ? 4 : 3;
+    const offsetIdx = query.length > 0 ? 5 : 4;
 
     const sql = `
       WITH bounds AS (
         SELECT
-          ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS today_start,
-          ((date_trunc('week',  now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS week_start,
-          ((date_trunc('month', now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') AS month_start
+          (date_trunc('day', $${nowIdx}::timestamp - interval '6 hour') + interval '6 hour') AS today_start,
+          date_trunc('week', $${nowIdx}::timestamp) AS week_start,
+          date_trunc('month', $${nowIdx}::timestamp) AS month_start
       )
       SELECT
         u.user_id,
@@ -205,7 +233,7 @@ export async function fetchGuildUserStatsPaged(
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT today_start FROM bounds) THEN vs.duration_seconds END), 0) AS today_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT week_start FROM bounds) THEN vs.duration_seconds END), 0) AS week_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT month_start FROM bounds) THEN vs.duration_seconds END), 0) AS month_seconds,
-        to_char(u.last_seen_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS last_seen_at
+        to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
       FROM users u
       LEFT JOIN voice_sessions vs
         ON vs.user_id = u.user_id
@@ -215,8 +243,8 @@ export async function fetchGuildUserStatsPaged(
       ${query.length > 0 ? " AND (u.nickname ILIKE $2 OR u.student_no ILIKE $2 OR CAST(u.user_id AS TEXT) ILIKE $2) " : ""}
       GROUP BY u.user_id, u.nickname, u.student_no, u.status, u.level_name, u.xp, u.total_seconds, u.last_seen_at
       ORDER BY ${sortKey} ${sortOrder} NULLS LAST
-      LIMIT ${query.length > 0 ? "$3" : "$2"}
-      OFFSET ${query.length > 0 ? "$4" : "$3"}
+      LIMIT $${limitIdx}
+      OFFSET $${offsetIdx}
     `;
 
     const { rows } = await client.query(sql, baseParams);
@@ -246,11 +274,12 @@ export async function fetchUserDetail(guildId: bigint, userId: bigint): Promise<
   const pool = getPool();
   const client = await pool.connect();
   try {
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
       SELECT u.user_id, u.nickname, u.student_no, u.status, u.level_name, COALESCE(u.xp,0) AS xp,
              COALESCE(u.total_seconds,0) AS total_seconds,
-             to_char(u.last_seen_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS last_seen_at
+             to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
       FROM users u
       WHERE u.guild_id=$1 AND u.user_id=$2
       `,
@@ -281,10 +310,11 @@ export async function fetchUserEntryLogs(
   const pool = getPool();
   const client = await pool.connect();
   try {
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
-      SELECT to_char(started_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS started_at,
-             to_char(ended_at   AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI')   AS ended_at,
+      SELECT to_char(started_at, 'YYYY-MM-DD HH24:MI') AS started_at,
+             to_char(ended_at, 'YYYY-MM-DD HH24:MI') AS ended_at,
              duration_seconds
       FROM voice_sessions
       WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL
@@ -311,18 +341,24 @@ export async function fetchUserDailyTrend(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    const start = new Date();
-    start.setDate(start.getDate() - (days - 1));
+    // KST 기준 시작일 계산
+    const kstNow = nowKST();
+    const start = new Date(kstNow);
+    start.setUTCDate(start.getUTCDate() - (days - 1));
+    start.setUTCHours(0, 0, 0, 0);
+    const startStr = start.toISOString().slice(0, 19).replace('T', ' ');
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
-      SELECT ((date_trunc('day', (ended_at AT TIME ZONE 'Asia/Seoul') - interval '6 hour') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS d,
+      SELECT (date_trunc('day', ended_at - interval '6 hour') + interval '6 hour') AS d,
              SUM(duration_seconds) AS seconds
       FROM voice_sessions
-      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3
+      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3::timestamp
       GROUP BY d
       ORDER BY d
       `,
-      [guildId.toString(), userId.toString(), start]
+      [guildId.toString(), userId.toString(), startStr]
     );
     const map = new Map<string, number>();
     for (const r of rows) {
@@ -351,20 +387,25 @@ export async function fetchUserWeekdayHourHeatmap(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    const start = new Date();
-    start.setDate(start.getDate() - days);
+    // KST 기준 시작일 계산
+    const kstNow = nowKST();
+    const start = new Date(kstNow);
+    start.setUTCDate(start.getUTCDate() - days);
+    const startStr = start.toISOString().slice(0, 19).replace('T', ' ');
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
-      SELECT EXTRACT(DOW FROM ended_at AT TIME ZONE 'Asia/Seoul')::int AS dow,
-             EXTRACT(HOUR FROM ended_at AT TIME ZONE 'Asia/Seoul')::int AS hour,
+      SELECT EXTRACT(DOW FROM ended_at)::int AS dow,
+             EXTRACT(HOUR FROM ended_at)::int AS hour,
              COUNT(*)::int AS cnt,
              COALESCE(SUM(duration_seconds), 0) AS seconds
       FROM voice_sessions
-      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3
+      WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3::timestamp
       GROUP BY dow, hour
       ORDER BY dow, hour
       `,
-      [guildId.toString(), userId.toString(), start]
+      [guildId.toString(), userId.toString(), startStr]
     );
     return rows.map((r) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.cnt), seconds: Number(r.seconds || 0) }));
   } finally {
@@ -380,17 +421,22 @@ export async function fetchUserMonthlyTrend(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    // Start from first day of (months-1) months ago
-    const start = new Date();
+    // KST 기준으로 (months-1) 개월 전 1일부터 시작
+    const kstNow = nowKST();
+    const start = new Date(kstNow);
     start.setUTCDate(1);
     start.setUTCMonth(start.getUTCMonth() - (months - 1));
-    const end = new Date();
+    const end = new Date(kstNow);
+    const startStr = start.toISOString().slice(0, 19).replace('T', ' ');
+    const endStr = end.toISOString().slice(0, 19).replace('T', ' ');
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
       WITH month_bounds AS (
         SELECT
-          date_trunc('month', $3::timestamptz AT TIME ZONE 'Asia/Seoul') AS start_month,
-          date_trunc('month', $4::timestamptz AT TIME ZONE 'Asia/Seoul') AS end_month
+          date_trunc('month', $3::timestamp) AS start_month,
+          date_trunc('month', $4::timestamp) AS end_month
       ), months AS (
         SELECT generate_series(
           (SELECT start_month FROM month_bounds),
@@ -398,12 +444,12 @@ export async function fetchUserMonthlyTrend(
           interval '1 month'
         ) AS m
       ), agg AS (
-        SELECT date_trunc('month', ended_at AT TIME ZONE 'Asia/Seoul') AS m,
+        SELECT date_trunc('month', ended_at) AS m,
                SUM(duration_seconds) AS seconds
         FROM voice_sessions
         WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL
-          AND (ended_at AT TIME ZONE 'Asia/Seoul') >= (SELECT start_month FROM month_bounds)
-          AND (ended_at AT TIME ZONE 'Asia/Seoul') <  ((SELECT end_month FROM month_bounds) + interval '1 month')
+          AND ended_at >= (SELECT start_month FROM month_bounds)
+          AND ended_at <  ((SELECT end_month FROM month_bounds) + interval '1 month')
         GROUP BY m
       )
       SELECT to_char(months.m, 'YYYY-MM') AS month,
@@ -412,7 +458,7 @@ export async function fetchUserMonthlyTrend(
       LEFT JOIN agg ON agg.m = months.m
       ORDER BY months.m
       `,
-      [guildId.toString(), userId.toString(), start, end]
+      [guildId.toString(), userId.toString(), startStr, endStr]
     );
     return rows.map((r) => ({ month: String(r.month), hours: Math.round(((Number(r.seconds || 0) / 3600)) * 100) / 100 }));
   } finally {
@@ -428,49 +474,50 @@ export async function fetchUserCalendarYear(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    const start = new Date(Date.UTC(year, 0, 1));
-    const end = new Date(Date.UTC(year + 1, 0, 1));
+    // KST 기준 연도의 시작/끝 (06:00 경계)
+    const startStr = `${year}-01-01 06:00:00`;
+    const endStr = `${year + 1}-01-01 06:00:00`;
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
       WITH bounds AS (
-        SELECT 
-          -- Use timestamp without time zone in KST to align with daily_agg.d type
-          (date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AS s,
-          (date_trunc('day', $4::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AS e
-      ), sessions_kst AS (
-        SELECT 
-          started_at AT TIME ZONE 'Asia/Seoul' AS start_kst,
-          ended_at AT TIME ZONE 'Asia/Seoul' AS end_kst,
+        SELECT
+          $3::timestamp AS s,
+          $4::timestamp AS e
+      ), sessions_in_range AS (
+        SELECT
+          started_at,
+          ended_at,
           session_id
         FROM voice_sessions
-        WHERE guild_id=$1 AND user_id=$2 
-          AND ended_at IS NOT NULL 
-          AND ended_at >= (SELECT s FROM bounds) 
+        WHERE guild_id=$1 AND user_id=$2
+          AND ended_at IS NOT NULL
+          AND ended_at >= (SELECT s FROM bounds)
           AND started_at < (SELECT e FROM bounds)
       ), split_by_date AS (
-        SELECT 
+        SELECT
           session_id,
-          -- Calculate which dates this session spans
+          started_at,
+          ended_at,
           generate_series(
-            (date_trunc('day', start_kst - interval '6 hour') + interval '6 hour'),
-            (date_trunc('day', end_kst - interval '6 hour') + interval '6 hour'),
+            date_trunc('day', started_at - interval '6 hour') + interval '6 hour',
+            date_trunc('day', ended_at - interval '6 hour') + interval '6 hour',
             interval '1 day'
           ) AS date_boundary
-        FROM sessions_kst
+        FROM sessions_in_range
       ), daily_split AS (
-        SELECT 
-          sd.session_id,
-          sd.date_boundary AS d,
-          -- Calculate seconds for this date portion: intersection of session time and date boundary
+        SELECT
+          session_id,
+          date_boundary AS d,
           EXTRACT(EPOCH FROM (
-            LEAST(sk.end_kst, sd.date_boundary + interval '1 day') - 
-            GREATEST(sk.start_kst, sd.date_boundary)
+            LEAST(ended_at, date_boundary + interval '1 day') -
+            GREATEST(started_at, date_boundary)
           ))::bigint AS seconds
-        FROM split_by_date sd
-        JOIN sessions_kst sk ON sd.session_id = sk.session_id
-        WHERE sk.end_kst > sd.date_boundary AND sk.start_kst < sd.date_boundary + interval '1 day'
+        FROM split_by_date
+        WHERE ended_at > date_boundary AND started_at < date_boundary + interval '1 day'
       ), daily_agg AS (
-        SELECT 
+        SELECT
           d,
           SUM(seconds)::bigint AS seconds,
           COUNT(DISTINCT session_id) AS sessions
@@ -487,7 +534,7 @@ export async function fetchUserCalendarYear(
       LEFT JOIN daily_agg ON days.d = daily_agg.d
       ORDER BY days.d
       `,
-      [guildId.toString(), userId.toString(), start, end]
+      [guildId.toString(), userId.toString(), startStr, endStr]
     );
     return rows.map((r) => ({ date: String(r.date), seconds: Number(r.seconds || 0), sessions: Number(r.sessions || 0) }));
   } catch (error) {
@@ -506,14 +553,17 @@ export async function fetchGuildCalendarYear(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    const start = new Date(Date.UTC(year, 0, 1));
-    const end = new Date(Date.UTC(year + 1, 0, 1));
+    // KST 기준 연도의 시작/끝
+    const startStr = `${year}-01-01 00:00:00`;
+    const endStr = `${year + 1}-01-01 00:00:00`;
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
       WITH day_bounds AS (
         SELECT
-          date_trunc('day', $2::timestamptz AT TIME ZONE 'Asia/Seoul') AS start_day,
-          date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') AS end_day
+          $2::timestamp AS start_day,
+          $3::timestamp AS end_day
       ), days AS (
         SELECT generate_series(
           (SELECT start_day FROM day_bounds),
@@ -521,12 +571,12 @@ export async function fetchGuildCalendarYear(
           interval '1 day'
         ) AS d
       ), daily AS (
-        SELECT date_trunc('day', ended_at AT TIME ZONE 'Asia/Seoul') AS d,
+        SELECT date_trunc('day', ended_at) AS d,
                SUM(duration_seconds) AS seconds
         FROM voice_sessions
         WHERE guild_id=$1 AND ended_at IS NOT NULL
-          AND (ended_at AT TIME ZONE 'Asia/Seoul') >= (SELECT start_day FROM day_bounds)
-          AND (ended_at AT TIME ZONE 'Asia/Seoul') <  ((SELECT end_day FROM day_bounds) + interval '1 day')
+          AND ended_at >= (SELECT start_day FROM day_bounds)
+          AND ended_at <  ((SELECT end_day FROM day_bounds) + interval '1 day')
         GROUP BY d
       )
       SELECT to_char(days.d, 'YYYY-MM-DD') AS date,
@@ -535,7 +585,7 @@ export async function fetchGuildCalendarYear(
       LEFT JOIN daily ON daily.d = days.d
       ORDER BY days.d
       `,
-      [guildId.toString(), start, end]
+      [guildId.toString(), startStr, endStr]
     );
     return rows.map((r) => ({ date: String(r.date), seconds: Number(r.seconds || 0) }));
   } finally {
@@ -552,48 +602,50 @@ export async function fetchGuildPerUserDailyMaxHours(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    const start = new Date(Date.UTC(year, 0, 1));
-    const end = new Date(Date.UTC(year + 1, 0, 1));
+    // KST 기준 연도의 시작/끝 (06:00 경계)
+    const startStr = `${year}-01-01 06:00:00`;
+    const endStr = `${year + 1}-01-01 06:00:00`;
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
       WITH bounds AS (
-        SELECT 
-          ((date_trunc('day', $2::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
-          ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
-      ), sessions_kst AS (
-        SELECT 
+        SELECT
+          $2::timestamp AS s,
+          $3::timestamp AS e
+      ), sessions_in_range AS (
+        SELECT
           user_id,
-          started_at AT TIME ZONE 'Asia/Seoul' AS start_kst,
-          ended_at AT TIME ZONE 'Asia/Seoul' AS end_kst,
+          started_at,
+          ended_at,
           session_id
         FROM voice_sessions
-        WHERE guild_id=$1 
-          AND ended_at IS NOT NULL 
-          AND ended_at >= (SELECT s FROM bounds) 
+        WHERE guild_id=$1
+          AND ended_at IS NOT NULL
+          AND ended_at >= (SELECT s FROM bounds)
           AND started_at < (SELECT e FROM bounds)
       ), split_by_date AS (
-        SELECT 
+        SELECT
           user_id,
           session_id,
-          -- Calculate which dates this session spans
+          started_at,
+          ended_at,
           generate_series(
-            (date_trunc('day', start_kst - interval '6 hour') + interval '6 hour'),
-            (date_trunc('day', end_kst - interval '6 hour') + interval '6 hour'),
+            date_trunc('day', started_at - interval '6 hour') + interval '6 hour',
+            date_trunc('day', ended_at - interval '6 hour') + interval '6 hour',
             interval '1 day'
           ) AS date_boundary
-        FROM sessions_kst
+        FROM sessions_in_range
       ), daily_split AS (
-        SELECT 
-          sd.user_id,
-          sd.date_boundary AS d,
-          -- Calculate seconds for this date portion: intersection of session time and date boundary
+        SELECT
+          user_id,
+          date_boundary AS d,
           EXTRACT(EPOCH FROM (
-            LEAST(sk.end_kst, sd.date_boundary + interval '1 day') - 
-            GREATEST(sk.start_kst, sd.date_boundary)
+            LEAST(ended_at, date_boundary + interval '1 day') -
+            GREATEST(started_at, date_boundary)
           ))::bigint AS seconds
-        FROM split_by_date sd
-        JOIN sessions_kst sk ON sd.session_id = sk.session_id AND sd.user_id = sk.user_id
-        WHERE sk.end_kst > sd.date_boundary AND sk.start_kst < sd.date_boundary + interval '1 day'
+        FROM split_by_date
+        WHERE ended_at > date_boundary AND started_at < date_boundary + interval '1 day'
       ), daily AS (
         SELECT user_id,
                d,
@@ -605,7 +657,7 @@ export async function fetchGuildPerUserDailyMaxHours(
       SELECT COALESCE(MAX(seconds), 0) AS max_seconds
       FROM daily
       `,
-      [guildId.toString(), start, end]
+      [guildId.toString(), startStr, endStr]
     );
     const maxSeconds = Number(rows?.[0]?.max_seconds ?? 0);
     const hours = Math.round(((maxSeconds / 3600)) * 100) / 100;
@@ -627,14 +679,19 @@ export async function fetchUserDayHours(
   const pool = getPool();
   const client = await pool.connect();
   try {
+    // 06:00 경계 기준으로 하루 범위 계산
+    const startStr = `${date} 06:00:00`;
+    const endStr = `${date} 06:00:00`;
+
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
       WITH day_bounds AS (
-        SELECT 
-          ((to_timestamp($3, 'YYYY-MM-DD') AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul' AS s,
-          (((to_timestamp($3, 'YYYY-MM-DD') + interval '1 day') AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul' AS e
+        SELECT
+          $3::timestamp AS s,
+          ($3::timestamp + interval '1 day') AS e
       )
-      SELECT EXTRACT(HOUR FROM ended_at AT TIME ZONE 'Asia/Seoul')::int AS hour,
+      SELECT EXTRACT(HOUR FROM ended_at)::int AS hour,
              COALESCE(SUM(duration_seconds), 0) AS seconds,
              COUNT(*) AS sessions
       FROM voice_sessions
@@ -643,7 +700,7 @@ export async function fetchUserDayHours(
       GROUP BY hour
       ORDER BY hour
       `,
-      [guildId.toString(), userId.toString(), date]
+      [guildId.toString(), userId.toString(), startStr]
     );
     const map = new Map<number, { seconds: number; sessions: number }>();
     for (const r of rows) {
@@ -667,9 +724,10 @@ export async function fetchUserAvailableYears(
   const pool = getPool();
   const client = await pool.connect();
   try {
+    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
-      SELECT DISTINCT EXTRACT(YEAR FROM ended_at AT TIME ZONE 'Asia/Seoul')::int AS year
+      SELECT DISTINCT EXTRACT(YEAR FROM ended_at)::int AS year
       FROM voice_sessions
       WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL
       ORDER BY year
