@@ -327,20 +327,23 @@ async def record_voice_session(
 
             new_level = calculate_level(total_xp)
 
-            # 하루 경계: KST 06:00 기준으로 스트릭 일자를 산출한다.
-            # ended_at은 이미 KST로 저장되어 있으므로 -6h 시프트만 적용하여 06:00 경계를 맞춘다.
-            shifted = ended_at - timedelta(hours=6)
-            streak_day: date = shifted.date()
-            await conn.execute(
-                """
-                INSERT INTO daily_streaks (user_id, guild_id, streak_date)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (user_id, guild_id, streak_date) DO NOTHING;
-                """,
-                user_id,
-                guild_id,
-                streak_day,
-            )
+            # 하루 경계: KST 00:00 (자정) 기준으로 스트릭 일자를 산출한다.
+            # 세션이 자정을 넘기면 시작일과 종료일 모두 스트릭으로 기록
+            start_day: date = started_at.date()
+            end_day: date = ended_at.date()
+            current_day = start_day
+            while current_day <= end_day:
+                await conn.execute(
+                    """
+                    INSERT INTO daily_streaks (user_id, guild_id, streak_date)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (user_id, guild_id, streak_date) DO NOTHING;
+                    """,
+                    user_id,
+                    guild_id,
+                    current_day,
+                )
+                current_day += timedelta(days=1)
 
             # Persist computed level and level_name for convenience
             from core.leveling import get_level_title as _ltitle
@@ -506,17 +509,17 @@ async def fetch_month_streak_days(user_id: int, guild_id: int, year: int | None 
         return {"year": y, "month": m, "days": days_played, "today": today.day if (today.year==y and today.month==m) else None}
 
 
-async def fetch_user_calendar_year_kst6(user_id: int, guild_id: int, year: int) -> list[dict]:
-    """Return list of {date: 'YYYY-MM-DD', seconds: int, sessions: int} using KST 06:00 day boundary.
+async def fetch_user_calendar_year_kst(user_id: int, guild_id: int, year: int) -> list[dict]:
+    """Return list of {date: 'YYYY-MM-DD', seconds: int, sessions: int} using KST 00:00 day boundary.
 
-    Sessions spanning multiple days are split by date boundary (06:00 KST).
+    Sessions spanning multiple days are split by date boundary (00:00 KST).
     DB에 이미 KST로 저장되어 있으므로 timezone 변환 없이 직접 처리.
     """
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # KST 기준 연도의 시작/끝 (06:00 경계)
-        start = datetime(year, 1, 1, 6, 0, 0)  # 1월 1일 06:00 KST
-        end = datetime(year + 1, 1, 1, 6, 0, 0)  # 다음 해 1월 1일 06:00 KST
+        # KST 기준 연도의 시작/끝 (00:00 자정 경계)
+        start = datetime(year, 1, 1, 0, 0, 0)  # 1월 1일 00:00 KST
+        end = datetime(year + 1, 1, 1, 0, 0, 0)  # 다음 해 1월 1일 00:00 KST
         rows = await conn.fetch(
             """
             WITH sessions_in_range AS (
@@ -534,10 +537,10 @@ async def fetch_user_calendar_year_kst6(user_id: int, guild_id: int, year: int) 
                 session_id,
                 started_at,
                 ended_at,
-                -- 06:00 경계 기준 날짜들 생성
+                -- 00:00 자정 경계 기준 날짜들 생성
                 generate_series(
-                  date_trunc('day', started_at - interval '6 hour') + interval '6 hour',
-                  date_trunc('day', ended_at - interval '6 hour') + interval '6 hour',
+                  date_trunc('day', started_at),
+                  date_trunc('day', ended_at),
                   interval '1 day'
                 ) AS date_boundary
               FROM sessions_in_range
@@ -582,17 +585,17 @@ async def fetch_user_calendar_year_kst6(user_id: int, guild_id: int, year: int) 
         return out
 
 
-async def fetch_guild_per_user_daily_max_hours_kst6(guild_id: int, year: int) -> float:
-    """Return the maximum per-user daily total hours within the given year using KST 06:00 boundary.
+async def fetch_guild_per_user_daily_max_hours_kst(guild_id: int, year: int) -> float:
+    """Return the maximum per-user daily total hours within the given year using KST 00:00 boundary.
 
-    Sessions spanning multiple days are split by date boundary (06:00 KST).
+    Sessions spanning multiple days are split by date boundary (00:00 KST).
     DB에 이미 KST로 저장되어 있으므로 timezone 변환 없이 직접 처리.
     """
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # KST 기준 연도의 시작/끝 (06:00 경계)
-        start = datetime(year, 1, 1, 6, 0, 0)  # 1월 1일 06:00 KST
-        end = datetime(year + 1, 1, 1, 6, 0, 0)  # 다음 해 1월 1일 06:00 KST
+        # KST 기준 연도의 시작/끝 (00:00 자정 경계)
+        start = datetime(year, 1, 1, 0, 0, 0)  # 1월 1일 00:00 KST
+        end = datetime(year + 1, 1, 1, 0, 0, 0)  # 다음 해 1월 1일 00:00 KST
         row = await conn.fetchrow(
             """
             WITH sessions_in_range AS (
@@ -612,10 +615,10 @@ async def fetch_guild_per_user_daily_max_hours_kst6(guild_id: int, year: int) ->
                 session_id,
                 started_at,
                 ended_at,
-                -- 06:00 경계 기준 날짜들 생성
+                -- 00:00 자정 경계 기준 날짜들 생성
                 generate_series(
-                  date_trunc('day', started_at - interval '6 hour') + interval '6 hour',
-                  date_trunc('day', ended_at - interval '6 hour') + interval '6 hour',
+                  date_trunc('day', started_at),
+                  date_trunc('day', ended_at),
                   interval '1 day'
                 ) AS date_boundary
               FROM sessions_in_range
@@ -735,19 +738,23 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
                             guild_id,
                         )
 
-                    # streak (06:00 경계 적용)
-                    shifted = now - timedelta(hours=6)
-                    streak_day: date = shifted.date()
-                    await conn.execute(
-                        """
-                        INSERT INTO daily_streaks (user_id, guild_id, streak_date)
-                        VALUES ($1, $2, $3)
-                        ON CONFLICT (user_id, guild_id, streak_date) DO NOTHING;
-                        """,
-                        user_id,
-                        guild_id,
-                        streak_day,
-                    )
+                    # streak (00:00 자정 경계 적용)
+                    # 세션이 자정을 넘기면 시작일과 종료일 모두 스트릭으로 기록
+                    start_day: date = started_at.date()
+                    end_day: date = now.date()
+                    current_day = start_day
+                    while current_day <= end_day:
+                        await conn.execute(
+                            """
+                            INSERT INTO daily_streaks (user_id, guild_id, streak_date)
+                            VALUES ($1, $2, $3)
+                            ON CONFLICT (user_id, guild_id, streak_date) DO NOTHING;
+                            """,
+                            user_id,
+                            guild_id,
+                            current_day,
+                        )
+                        current_day += timedelta(days=1)
 
                 finalized_count += 1
 

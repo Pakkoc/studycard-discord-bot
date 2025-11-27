@@ -17,13 +17,9 @@ export async function fetchSummaryToday(guildId: bigint): Promise<SummaryToday> 
   const pool = getPool();
   const client = await pool.connect();
   try {
-    // KST 기준 오늘 06:00 시작 시간 계산
+    // KST 기준 오늘 00:00 시작 시간 계산
     const kst = nowKST();
-    const hour = kst.getUTCHours();
-    if (hour < 6) {
-      kst.setUTCDate(kst.getUTCDate() - 1);
-    }
-    kst.setUTCHours(6, 0, 0, 0);
+    kst.setUTCHours(0, 0, 0, 0);
     const todayStartStr = kst.toISOString().slice(0, 19).replace('T', ' ');
 
     // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요

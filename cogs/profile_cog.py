@@ -348,8 +348,8 @@ class ProfileCog(commands.Cog):
 
         try:
             from core.database import (
-                fetch_user_calendar_year_kst6,
-                fetch_guild_per_user_daily_max_hours_kst6,
+                fetch_user_calendar_year_kst,
+                fetch_guild_per_user_daily_max_hours_kst,
                 ensure_user,
             )
             # Prepare small avatar for title icon
@@ -358,7 +358,7 @@ class ProfileCog(commands.Cog):
             avatar_img = Image.open(BytesIO(avatar_bytes)).convert("RGBA") if avatar_bytes else None
             await ensure_user(target.id, interaction.guild.id)
             # 데이터 조회
-            data = await fetch_user_calendar_year_kst6(target.id, interaction.guild.id, y)
+            data = await fetch_user_calendar_year_kst(target.id, interaction.guild.id, y)
             # cap: 12시간 고정 (12시간 이상이면 최대 색상)
             cap_hours = 12.0
 

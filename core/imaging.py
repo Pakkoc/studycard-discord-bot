@@ -658,7 +658,7 @@ def render_annual_grass_image(
 ) -> BytesIO:
     """Render a GitHub-like annual contribution calendar image.
 
-    - Day boundary is assumed already adjusted (e.g., KST+06) in input dates.
+    - Day boundary is KST 00:00 (midnight).
     - Color scale: 0h -> #e5e7eb, then linear gradient blue-100 -> blue-600 by hours/cap.
     """
     # Prepare map date -> hours

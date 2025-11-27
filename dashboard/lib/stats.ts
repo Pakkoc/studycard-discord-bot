@@ -7,15 +7,10 @@ function nowKST(): Date {
   return new Date(now.getTime() + 9 * 60 * 60 * 1000);
 }
 
-/** KST 기준 오늘 06:00 시작 시간을 ISO string으로 반환 */
+/** KST 기준 오늘 00:00 시작 시간을 ISO string으로 반환 */
 function todayStartKST(): string {
   const kst = nowKST();
-  const hour = kst.getUTCHours();
-  // 06:00 이전이면 전날 06:00 기준
-  if (hour < 6) {
-    kst.setUTCDate(kst.getUTCDate() - 1);
-  }
-  kst.setUTCHours(6, 0, 0, 0);
+  kst.setUTCHours(0, 0, 0, 0);
   return kst.toISOString().slice(0, 19).replace('T', ' ');
 }
 
@@ -105,7 +100,7 @@ export async function fetchGuildUserStats(
     const sql = `
       WITH bounds AS (
         SELECT
-          (date_trunc('day', $${nowIdx}::timestamp - interval '6 hour') + interval '6 hour') AS today_start,
+          date_trunc('day', $${nowIdx}::timestamp) AS today_start,
           date_trunc('week', $${nowIdx}::timestamp) AS week_start,
           date_trunc('month', $${nowIdx}::timestamp) AS month_start
       )
@@ -218,7 +213,7 @@ export async function fetchGuildUserStatsPaged(
     const sql = `
       WITH bounds AS (
         SELECT
-          (date_trunc('day', $${nowIdx}::timestamp - interval '6 hour') + interval '6 hour') AS today_start,
+          date_trunc('day', $${nowIdx}::timestamp) AS today_start,
           date_trunc('week', $${nowIdx}::timestamp) AS week_start,
           date_trunc('month', $${nowIdx}::timestamp) AS month_start
       )
@@ -351,7 +346,7 @@ export async function fetchUserDailyTrend(
     // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
       `
-      SELECT (date_trunc('day', ended_at - interval '6 hour') + interval '6 hour') AS d,
+      SELECT date_trunc('day', ended_at) AS d,
              SUM(duration_seconds) AS seconds
       FROM voice_sessions
       WHERE guild_id=$1 AND user_id=$2 AND ended_at IS NOT NULL AND ended_at >= $3::timestamp
@@ -474,9 +469,9 @@ export async function fetchUserCalendarYear(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    // KST 기준 연도의 시작/끝 (06:00 경계)
-    const startStr = `${year}-01-01 06:00:00`;
-    const endStr = `${year + 1}-01-01 06:00:00`;
+    // KST 기준 연도의 시작/끝 (00:00 자정 경계)
+    const startStr = `${year}-01-01 00:00:00`;
+    const endStr = `${year + 1}-01-01 00:00:00`;
 
     // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
@@ -501,8 +496,8 @@ export async function fetchUserCalendarYear(
           started_at,
           ended_at,
           generate_series(
-            date_trunc('day', started_at - interval '6 hour') + interval '6 hour',
-            date_trunc('day', ended_at - interval '6 hour') + interval '6 hour',
+            date_trunc('day', started_at),
+            date_trunc('day', ended_at),
             interval '1 day'
           ) AS date_boundary
         FROM sessions_in_range
@@ -594,7 +589,7 @@ export async function fetchGuildCalendarYear(
 }
 
 // 길드 전체에서 "개인별 하루 총합"의 최대치를 구함 (연간 범위)
-// Sessions spanning multiple days are split by date boundary (06:00 KST).
+// Sessions spanning multiple days are split by date boundary (00:00 KST).
 export async function fetchGuildPerUserDailyMaxHours(
   guildId: bigint,
   year: number
@@ -602,9 +597,9 @@ export async function fetchGuildPerUserDailyMaxHours(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    // KST 기준 연도의 시작/끝 (06:00 경계)
-    const startStr = `${year}-01-01 06:00:00`;
-    const endStr = `${year + 1}-01-01 06:00:00`;
+    // KST 기준 연도의 시작/끝 (00:00 자정 경계)
+    const startStr = `${year}-01-01 00:00:00`;
+    const endStr = `${year + 1}-01-01 00:00:00`;
 
     // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
@@ -631,8 +626,8 @@ export async function fetchGuildPerUserDailyMaxHours(
           started_at,
           ended_at,
           generate_series(
-            date_trunc('day', started_at - interval '6 hour') + interval '6 hour',
-            date_trunc('day', ended_at - interval '6 hour') + interval '6 hour',
+            date_trunc('day', started_at),
+            date_trunc('day', ended_at),
             interval '1 day'
           ) AS date_boundary
         FROM sessions_in_range
@@ -679,9 +674,9 @@ export async function fetchUserDayHours(
   const pool = getPool();
   const client = await pool.connect();
   try {
-    // 06:00 경계 기준으로 하루 범위 계산
-    const startStr = `${date} 06:00:00`;
-    const endStr = `${date} 06:00:00`;
+    // 00:00 자정 경계 기준으로 하루 범위 계산
+    const startStr = `${date} 00:00:00`;
+    const endStr = `${date} 00:00:00`;
 
     // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
     const { rows } = await client.query(
