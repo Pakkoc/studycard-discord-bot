@@ -322,10 +322,9 @@ async def record_voice_session(
 
             new_level = calculate_level(total_xp)
 
-            # 하루 경계: KST 06:00 기준으로 스크릭 일자를 산출한다.
-            # ended_at(UTC)을 Asia/Seoul로 변환한 뒤 -6h 시프트하여 일자를 취하면 06:00 경계를 맞출 수 있다.
-            local = ended_at.astimezone(timezone(timedelta(hours=9)))
-            shifted = local - timedelta(hours=6)
+            # 하루 경계: KST 06:00 기준으로 스트릭 일자를 산출한다.
+            # ended_at은 이미 KST로 저장되어 있으므로 -6h 시프트만 적용하여 06:00 경계를 맞춘다.
+            shifted = ended_at - timedelta(hours=6)
             streak_day: date = shifted.date()
             await conn.execute(
                 """
@@ -417,7 +416,9 @@ async def add_xp(user_id: int, guild_id: int, delta_xp: int) -> Dict[str, int | 
             }
 
 async def fetch_user_stats(user_id: int, guild_id: int) -> Optional[Dict[str, int]]:
+    """사용자 통계 조회. DB에 KST로 저장되어 있으므로 KST 기준 현재 시간과 비교."""
     pool = await get_pool()
+    now_kst = datetime.now(KST)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
@@ -425,9 +426,9 @@ async def fetch_user_stats(user_id: int, guild_id: int) -> Optional[Dict[str, in
                 COALESCE(u.total_seconds,0) AS total_seconds,
                 COALESCE(u.xp,0) AS xp,
                 COALESCE(u.student_no, '') AS student_no,
-                COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('day',   now()) THEN vs.duration_seconds END), 0) AS today_seconds,
-                COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('week',  now()) THEN vs.duration_seconds END), 0) AS week_seconds,
-                COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('month', now()) THEN vs.duration_seconds END), 0) AS month_seconds
+                COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('day',   $3::timestamp) THEN vs.duration_seconds END), 0) AS today_seconds,
+                COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('week',  $3::timestamp) THEN vs.duration_seconds END), 0) AS week_seconds,
+                COALESCE(SUM(CASE WHEN vs.ended_at >= date_trunc('month', $3::timestamp) THEN vs.duration_seconds END), 0) AS month_seconds
             FROM users u
             LEFT JOIN voice_sessions vs
                 ON vs.user_id=u.user_id AND vs.guild_id=u.guild_id AND vs.ended_at IS NOT NULL
@@ -436,6 +437,7 @@ async def fetch_user_stats(user_id: int, guild_id: int) -> Optional[Dict[str, in
             """,
             user_id,
             guild_id,
+            now_kst.replace(tzinfo=None),  # DB는 timezone-naive KST로 저장되어 있음
         )
         if not row:
             return None
@@ -501,55 +503,52 @@ async def fetch_month_streak_days(user_id: int, guild_id: int, year: int | None 
 
 async def fetch_user_calendar_year_kst6(user_id: int, guild_id: int, year: int) -> list[dict]:
     """Return list of {date: 'YYYY-MM-DD', seconds: int, sessions: int} using KST 06:00 day boundary.
-    
+
     Sessions spanning multiple days are split by date boundary (06:00 KST).
+    DB에 이미 KST로 저장되어 있으므로 timezone 변환 없이 직접 처리.
     """
     pool = await get_pool()
     async with pool.acquire() as conn:
-        start = datetime(year, 1, 1, tzinfo=timezone.utc)
-        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        # KST 기준 연도의 시작/끝 (06:00 경계)
+        start = datetime(year, 1, 1, 6, 0, 0)  # 1월 1일 06:00 KST
+        end = datetime(year + 1, 1, 1, 6, 0, 0)  # 다음 해 1월 1일 06:00 KST
         rows = await conn.fetch(
             """
-            WITH bounds AS (
-              SELECT 
-                ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
-                ((date_trunc('day', $4::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
-            ), sessions_kst AS (
-              SELECT 
-                started_at AT TIME ZONE 'Asia/Seoul' AS start_kst,
-                ended_at AT TIME ZONE 'Asia/Seoul' AS end_kst,
+            WITH sessions_in_range AS (
+              SELECT
+                started_at,
+                ended_at,
                 session_id
               FROM voice_sessions
-              WHERE guild_id=$2 AND user_id=$1 
-                AND ended_at IS NOT NULL 
-                AND ended_at >= (SELECT s FROM bounds) 
-                AND started_at < (SELECT e FROM bounds)
+              WHERE guild_id=$2 AND user_id=$1
+                AND ended_at IS NOT NULL
+                AND ended_at >= $3
+                AND started_at < $4
             ), split_by_date AS (
-              SELECT 
+              SELECT
                 session_id,
-                -- Calculate date boundary for this session (06:00 KST)
-                ((date_trunc('day', start_kst - interval '6 hour') + interval '6 hour')) AS day_start,
-                -- Calculate which dates this session spans
+                started_at,
+                ended_at,
+                -- 06:00 경계 기준 날짜들 생성
                 generate_series(
-                  (date_trunc('day', start_kst - interval '6 hour') + interval '6 hour'),
-                  (date_trunc('day', end_kst - interval '6 hour') + interval '6 hour'),
+                  date_trunc('day', started_at - interval '6 hour') + interval '6 hour',
+                  date_trunc('day', ended_at - interval '6 hour') + interval '6 hour',
                   interval '1 day'
                 ) AS date_boundary
-              FROM sessions_kst
+              FROM sessions_in_range
             ), daily_split AS (
-              SELECT 
-                sd.session_id,
-                sd.date_boundary AS d,
-                -- Calculate seconds for this date portion: intersection of session time and date boundary
+              SELECT
+                session_id,
+                date_boundary AS d,
+                -- 해당 날짜 구간과 세션의 교집합 시간(초) 계산
                 EXTRACT(EPOCH FROM (
-                  LEAST(sk.end_kst, sd.date_boundary + interval '1 day') - 
-                  GREATEST(sk.start_kst, sd.date_boundary)
+                  LEAST(ended_at, date_boundary + interval '1 day') -
+                  GREATEST(started_at, date_boundary)
                 ))::bigint AS seconds
-              FROM split_by_date sd
-              JOIN sessions_kst sk ON sd.session_id = sk.session_id
-              WHERE sk.end_kst > sd.date_boundary AND sk.start_kst < sd.date_boundary + interval '1 day'
+              FROM split_by_date
+              WHERE ended_at > date_boundary AND started_at < date_boundary + interval '1 day'
             ), daily_agg AS (
-              SELECT 
+              SELECT
                 d,
                 SUM(seconds)::bigint AS seconds,
                 COUNT(DISTINCT session_id) AS sessions
@@ -580,53 +579,52 @@ async def fetch_user_calendar_year_kst6(user_id: int, guild_id: int, year: int) 
 
 async def fetch_guild_per_user_daily_max_hours_kst6(guild_id: int, year: int) -> float:
     """Return the maximum per-user daily total hours within the given year using KST 06:00 boundary.
-    
+
     Sessions spanning multiple days are split by date boundary (06:00 KST).
+    DB에 이미 KST로 저장되어 있으므로 timezone 변환 없이 직접 처리.
     """
     pool = await get_pool()
     async with pool.acquire() as conn:
-        start = datetime(year, 1, 1, tzinfo=timezone.utc)
-        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        # KST 기준 연도의 시작/끝 (06:00 경계)
+        start = datetime(year, 1, 1, 6, 0, 0)  # 1월 1일 06:00 KST
+        end = datetime(year + 1, 1, 1, 6, 0, 0)  # 다음 해 1월 1일 06:00 KST
         row = await conn.fetchrow(
             """
-            WITH bounds AS (
-              SELECT 
-                ((date_trunc('day', $2::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS s,
-                ((date_trunc('day', $3::timestamptz AT TIME ZONE 'Asia/Seoul') + interval '6 hour') AT TIME ZONE 'Asia/Seoul') AS e
-            ), sessions_kst AS (
-              SELECT 
+            WITH sessions_in_range AS (
+              SELECT
                 user_id,
-                started_at AT TIME ZONE 'Asia/Seoul' AS start_kst,
-                ended_at AT TIME ZONE 'Asia/Seoul' AS end_kst,
+                started_at,
+                ended_at,
                 session_id
               FROM voice_sessions
-              WHERE guild_id=$1 
-                AND ended_at IS NOT NULL 
-                AND ended_at >= (SELECT s FROM bounds) 
-                AND started_at < (SELECT e FROM bounds)
+              WHERE guild_id=$1
+                AND ended_at IS NOT NULL
+                AND ended_at >= $2
+                AND started_at < $3
             ), split_by_date AS (
-              SELECT 
+              SELECT
                 user_id,
                 session_id,
-                -- Calculate which dates this session spans
+                started_at,
+                ended_at,
+                -- 06:00 경계 기준 날짜들 생성
                 generate_series(
-                  (date_trunc('day', start_kst - interval '6 hour') + interval '6 hour'),
-                  (date_trunc('day', end_kst - interval '6 hour') + interval '6 hour'),
+                  date_trunc('day', started_at - interval '6 hour') + interval '6 hour',
+                  date_trunc('day', ended_at - interval '6 hour') + interval '6 hour',
                   interval '1 day'
                 ) AS date_boundary
-              FROM sessions_kst
+              FROM sessions_in_range
             ), daily_split AS (
-              SELECT 
-                sd.user_id,
-                sd.date_boundary AS d,
-                -- Calculate seconds for this date portion: intersection of session time and date boundary
+              SELECT
+                user_id,
+                date_boundary AS d,
+                -- 해당 날짜 구간과 세션의 교집합 시간(초) 계산
                 EXTRACT(EPOCH FROM (
-                  LEAST(sk.end_kst, sd.date_boundary + interval '1 day') - 
-                  GREATEST(sk.start_kst, sd.date_boundary)
+                  LEAST(ended_at, date_boundary + interval '1 day') -
+                  GREATEST(started_at, date_boundary)
                 ))::bigint AS seconds
-              FROM split_by_date sd
-              JOIN sessions_kst sk ON sd.session_id = sk.session_id AND sd.user_id = sk.user_id
-              WHERE sk.end_kst > sd.date_boundary AND sk.start_kst < sd.date_boundary + interval '1 day'
+              FROM split_by_date
+              WHERE ended_at > date_boundary AND started_at < date_boundary + interval '1 day'
             ), daily AS (
               SELECT user_id,
                      d,
@@ -663,17 +661,20 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
                 return 0
 
             now = datetime.now(KST)
+            now_naive = now.replace(tzinfo=None)  # DB는 timezone-naive KST로 저장
             finalized_count = 0
             for rec in open_sessions:
                 session_id = rec["session_id"]
                 user_id = rec["user_id"]
                 guild_id = rec["guild_id"]
                 started_at: datetime = rec["started_at"]
-                duration = int((now - started_at).total_seconds())
+                # started_at이 naive이면 직접 비교, aware이면 naive로 변환 후 비교
+                started_naive = started_at.replace(tzinfo=None) if started_at.tzinfo else started_at
+                duration = int((now_naive - started_naive).total_seconds())
 
                 await conn.execute(
                     "UPDATE voice_sessions SET ended_at=$1, duration_seconds=$2 WHERE session_id=$3",
-                    now,
+                    now_naive,
                     duration,
                     session_id,
                 )
@@ -698,7 +699,7 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
                         RETURNING total_seconds
                         """,
                         duration,
-                        now,
+                        now_naive,
                         user_id,
                         guild_id,
                     )
@@ -732,8 +733,9 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
                             guild_id,
                         )
 
-                    # streak
-                    streak_day: date = now.date()
+                    # streak (06:00 경계 적용)
+                    shifted = now - timedelta(hours=6)
+                    streak_day: date = shifted.date()
                     await conn.execute(
                         """
                         INSERT INTO daily_streaks (user_id, guild_id, streak_date)
