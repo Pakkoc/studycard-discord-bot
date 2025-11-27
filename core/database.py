@@ -4,6 +4,11 @@ from datetime import date, datetime, timezone, timedelta
 
 # 한국 시간대 (KST, UTC+9)
 KST = timezone(timedelta(hours=9))
+
+def now_kst_naive() -> datetime:
+    """현재 한국시간을 timezone-naive datetime으로 반환 (DB 저장용)"""
+    return datetime.now(KST).replace(tzinfo=None)
+
 from typing import Optional, Dict
 
 import asyncpg
@@ -416,9 +421,9 @@ async def add_xp(user_id: int, guild_id: int, delta_xp: int) -> Dict[str, int | 
             }
 
 async def fetch_user_stats(user_id: int, guild_id: int) -> Optional[Dict[str, int]]:
-    """사용자 통계 조회. DB에 KST로 저장되어 있으므로 KST 기준 현재 시간과 비교."""
+    """사용자 통계 조회. DB에 KST naive datetime으로 저장되어 있으므로 KST 기준 현재 시간과 비교."""
     pool = await get_pool()
-    now_kst = datetime.now(KST)
+    now = now_kst_naive()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
@@ -437,7 +442,7 @@ async def fetch_user_stats(user_id: int, guild_id: int) -> Optional[Dict[str, in
             """,
             user_id,
             guild_id,
-            now_kst.replace(tzinfo=None),  # DB는 timezone-naive KST로 저장되어 있음
+            now,
         )
         if not row:
             return None
@@ -660,21 +665,18 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
             if not open_sessions:
                 return 0
 
-            now = datetime.now(KST)
-            now_naive = now.replace(tzinfo=None)  # DB는 timezone-naive KST로 저장
+            now = now_kst_naive()
             finalized_count = 0
             for rec in open_sessions:
                 session_id = rec["session_id"]
                 user_id = rec["user_id"]
                 guild_id = rec["guild_id"]
                 started_at: datetime = rec["started_at"]
-                # started_at이 naive이면 직접 비교, aware이면 naive로 변환 후 비교
-                started_naive = started_at.replace(tzinfo=None) if started_at.tzinfo else started_at
-                duration = int((now_naive - started_naive).total_seconds())
+                duration = int((now - started_at).total_seconds())
 
                 await conn.execute(
                     "UPDATE voice_sessions SET ended_at=$1, duration_seconds=$2 WHERE session_id=$3",
-                    now_naive,
+                    now,
                     duration,
                     session_id,
                 )
@@ -699,7 +701,7 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
                         RETURNING total_seconds
                         """,
                         duration,
-                        now_naive,
+                        now,
                         user_id,
                         guild_id,
                     )

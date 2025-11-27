@@ -10,6 +10,11 @@ from datetime import datetime, timezone, timedelta
 
 # 한국 시간대 (KST, UTC+9)
 KST = timezone(timedelta(hours=9))
+
+def now_kst_naive() -> datetime:
+    """현재 한국시간을 timezone-naive datetime으로 반환 (DB 저장용)"""
+    return datetime.now(KST).replace(tzinfo=None)
+
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -131,7 +136,7 @@ async def main() -> None:
 
             # Snapshot currently connected voice members and start fresh sessions immediately
             try:
-                now = datetime.now(KST)
+                now = now_kst_naive()
                 started = 0
                 for g in bot.guilds:
                     try:
@@ -474,7 +479,7 @@ async def main() -> None:
                 await set_user_nickname(member.id, guild_id, nickname)
             except Exception:
                 pass
-            active_sessions[key] = datetime.now(KST)
+            active_sessions[key] = now_kst_naive()
             logging.info("Voice session started: user=%s guild=%s", member.id, guild_id)
             return
 
@@ -484,9 +489,9 @@ async def main() -> None:
             and after_channel is not None
             and before_channel != after_channel
         ):
-            now = datetime.now(KST)
+            now = now_kst_naive()
             started_at = active_sessions.pop(key, None)
-            
+
             # Record the previous session only if it wasn't in an excluded channel
             if started_at and record_voice_session and not is_before_excluded:
                 try:
@@ -522,7 +527,7 @@ async def main() -> None:
                 logging.info("Voice session ended (excluded channel, not recorded): user=%s guild=%s channel=%s", member.id, guild_id, before_channel)
                 return
             
-            ended_at = datetime.now(KST)
+            ended_at = now_kst_naive()
             duration = int((ended_at - started_at).total_seconds())
             logging.info(
                 "Voice session ended: user=%s guild=%s duration=%ss", member.id, guild_id, duration
