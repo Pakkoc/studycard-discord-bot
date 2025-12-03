@@ -27,3 +27,8 @@ service_guide/
 /firebender.json
 /opencode.json
 # END Ruler Generated Files
+
+# MCP configuration (contains tokens)
+.mcp.json
+.claude/
+.env.local
