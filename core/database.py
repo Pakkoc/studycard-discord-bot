@@ -184,6 +184,40 @@ async def set_user_joined_ats(guild_id: int, user_id_to_joined_at: Dict[int, dat
         )
 
 
+async def set_user_profile_image(user_id: int, guild_id: int, profile_image: str) -> None:
+    """Upsert profile_image (프로필 이미지 URL) for a user."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_user_exists(conn, user_id, guild_id)
+        await conn.execute(
+            """
+            UPDATE users
+            SET profile_image=$1
+            WHERE user_id=$2 AND guild_id=$3
+            """,
+            profile_image,
+            user_id,
+            guild_id,
+        )
+
+
+async def set_user_profile_images(guild_id: int, user_id_to_profile_image: Dict[int, str]) -> None:
+    """Bulk upsert profile_image (프로필 이미지 URL) for many users at once."""
+    if not user_id_to_profile_image:
+        return
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        records = [(uid, guild_id, img) for uid, img in user_id_to_profile_image.items()]
+        await conn.executemany(
+            """
+            INSERT INTO users (user_id, guild_id, profile_image)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, guild_id) DO UPDATE SET profile_image=EXCLUDED.profile_image
+            """,
+            records,
+        )
+
+
 async def ensure_user(user_id: int, guild_id: int) -> None:
     """Ensure a single user record exists (opens its own connection)."""
     pool = await get_pool()
