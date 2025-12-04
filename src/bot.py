@@ -205,7 +205,8 @@ async def main() -> None:
 
             # Pre-provision user records for all current guild members so /profile works immediately
             try:
-                from core.database import ensure_users_for_guild, set_user_nicknames, set_user_student_nos, set_user_joined_ats, set_user_profile_images
+                from core.database import ensure_users_for_guild, set_user_nicknames, set_user_student_nos, set_user_joined_ats, set_user_profile_images, set_user_dormitories
+                from cogs.profile_cog import pick_house_name
                 for g in bot.guilds:
                     member_ids = [m.id for m in g.members if not m.bot]
                     # Upsert all users
@@ -220,12 +221,13 @@ async def main() -> None:
                     await ensure_users_for_guild(g.id, member_ids)
                     logging.info("Ensured %s user records for guild %s", len(member_ids), g.id)
 
-                    # Upsert nicknames, student numbers, joined_at, and profile_image for all existing members
+                    # Upsert nicknames, student numbers, joined_at, profile_image, and dormitory for all existing members
                     try:
                         user_id_to_nick = {}
                         user_id_to_stuno = {}
                         user_id_to_joined_at = {}
                         user_id_to_profile_image = {}
+                        user_id_to_dormitory = {}
                         for m in g.members:
                             if m.bot:
                                 continue
@@ -233,6 +235,10 @@ async def main() -> None:
                             # Store profile image URL
                             if m.display_avatar:
                                 user_id_to_profile_image[m.id] = str(m.display_avatar.url)
+                            # Store dormitory from role
+                            dormitory = pick_house_name(m)
+                            if dormitory:
+                                user_id_to_dormitory[m.id] = dormitory
                             # compute student number base (YYMMDD + order) and joined_at
                             if m.joined_at:
                                 joined_date_kst = m.joined_at.astimezone(KST).date()
@@ -253,6 +259,9 @@ async def main() -> None:
                                     user_id_to_nick[m.id] = m.nick or m.display_name or str(m)
                                     if m.display_avatar:
                                         user_id_to_profile_image[m.id] = str(m.display_avatar.url)
+                                    dormitory = pick_house_name(m)
+                                    if dormitory:
+                                        user_id_to_dormitory[m.id] = dormitory
                                     if m.joined_at:
                                         joined_date_kst = m.joined_at.astimezone(KST).date()
                                         user_id_to_joined_at[m.id] = joined_date_kst
@@ -269,7 +278,8 @@ async def main() -> None:
                         await set_user_student_nos(g.id, user_id_to_stuno)
                         await set_user_joined_ats(g.id, user_id_to_joined_at)
                         await set_user_profile_images(g.id, user_id_to_profile_image)
-                        logging.info("Upserted nicknames, joined_at, and profile_image for %s users in guild %s", len(user_id_to_nick), g.id)
+                        await set_user_dormitories(g.id, user_id_to_dormitory)
+                        logging.info("Upserted user data (nickname, joined_at, profile_image, dormitory) for %s users in guild %s", len(user_id_to_nick), g.id)
                     except Exception as nick_exc:
                         logging.warning("Nickname upsert failed for guild %s: %s", g.id, nick_exc)
             except Exception as prov_exc:
@@ -379,20 +389,37 @@ async def main() -> None:
 
     @bot.event
     async def on_member_update(before: discord.Member, after: discord.Member):
-        """Update DB immediately when a member's server nickname changes."""
+        """Update DB immediately when a member's server nickname or roles change."""
         try:
-            # Only proceed if nickname changed
-            if before.nick == after.nick:
+            from core.database import ensure_user, set_user_nickname, set_user_dormitory
+            from cogs.profile_cog import pick_house_name
+
+            nickname_changed = before.nick != after.nick
+            roles_changed = set(r.id for r in before.roles) != set(r.id for r in after.roles)
+
+            if not nickname_changed and not roles_changed:
                 return
-            from core.database import ensure_user, set_user_nickname
+
             await ensure_user(after.id, after.guild.id)
-            nickname = after.nick or after.display_name or str(after)
-            await set_user_nickname(after.id, after.guild.id, nickname)
-            logging.info(
-                "Updated nickname for member %s in guild %s to '%s'", after.id, after.guild.id, nickname
-            )
+
+            # Update nickname if changed
+            if nickname_changed:
+                nickname = after.nick or after.display_name or str(after)
+                await set_user_nickname(after.id, after.guild.id, nickname)
+                logging.info(
+                    "Updated nickname for member %s in guild %s to '%s'", after.id, after.guild.id, nickname
+                )
+
+            # Update dormitory if roles changed
+            if roles_changed:
+                dormitory = pick_house_name(after)
+                if dormitory:
+                    await set_user_dormitory(after.id, after.guild.id, dormitory)
+                    logging.info(
+                        "Updated dormitory for member %s in guild %s to '%s'", after.id, after.guild.id, dormitory
+                    )
         except Exception as exc:
-            logging.warning("Failed to handle nickname update: %s", exc)
+            logging.warning("Failed to handle member update: %s", exc)
 
     @bot.event
     async def on_user_update(before: discord.User, after: discord.User):

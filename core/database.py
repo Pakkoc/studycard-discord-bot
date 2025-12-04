@@ -218,6 +218,40 @@ async def set_user_profile_images(guild_id: int, user_id_to_profile_image: Dict[
         )
 
 
+async def set_user_dormitory(user_id: int, guild_id: int, dormitory: str) -> None:
+    """Upsert dormitory (기숙사) for a user."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_user_exists(conn, user_id, guild_id)
+        await conn.execute(
+            """
+            UPDATE users
+            SET dormitory=$1
+            WHERE user_id=$2 AND guild_id=$3
+            """,
+            dormitory,
+            user_id,
+            guild_id,
+        )
+
+
+async def set_user_dormitories(guild_id: int, user_id_to_dormitory: Dict[int, str]) -> None:
+    """Bulk upsert dormitory (기숙사) for many users at once."""
+    if not user_id_to_dormitory:
+        return
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        records = [(uid, guild_id, dorm) for uid, dorm in user_id_to_dormitory.items()]
+        await conn.executemany(
+            """
+            INSERT INTO users (user_id, guild_id, dormitory)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, guild_id) DO UPDATE SET dormitory=EXCLUDED.dormitory
+            """,
+            records,
+        )
+
+
 async def ensure_user(user_id: int, guild_id: int) -> None:
     """Ensure a single user record exists (opens its own connection)."""
     pool = await get_pool()
