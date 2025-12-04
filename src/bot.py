@@ -205,7 +205,7 @@ async def main() -> None:
 
             # Pre-provision user records for all current guild members so /profile works immediately
             try:
-                from core.database import ensure_users_for_guild, set_user_nicknames, set_user_student_nos
+                from core.database import ensure_users_for_guild, set_user_nicknames, set_user_student_nos, set_user_joined_ats
                 for g in bot.guilds:
                     member_ids = [m.id for m in g.members if not m.bot]
                     # Upsert all users
@@ -220,16 +220,19 @@ async def main() -> None:
                     await ensure_users_for_guild(g.id, member_ids)
                     logging.info("Ensured %s user records for guild %s", len(member_ids), g.id)
 
-                    # Upsert nicknames for all existing members
+                    # Upsert nicknames, student numbers, and joined_at for all existing members
                     try:
                         user_id_to_nick = {}
                         user_id_to_stuno = {}
+                        user_id_to_joined_at = {}
                         for m in g.members:
                             if m.bot:
                                 continue
                             user_id_to_nick[m.id] = m.nick or m.display_name or str(m)
-                            # compute student number base (YYMMDD + order)
+                            # compute student number base (YYMMDD + order) and joined_at
                             if m.joined_at:
+                                joined_date_kst = m.joined_at.astimezone(KST).date()
+                                user_id_to_joined_at[m.id] = joined_date_kst
                                 base = m.joined_at.astimezone(KST).strftime("%y%m%d")
                                 same_day = [mm for mm in g.members if mm.joined_at and mm.joined_at.date() == m.joined_at.date() and not mm.bot]
                                 same_day_sorted = sorted(same_day, key=lambda mm: (mm.joined_at, mm.id))
@@ -245,6 +248,8 @@ async def main() -> None:
                                 if not m.bot:
                                     user_id_to_nick[m.id] = m.nick or m.display_name or str(m)
                                     if m.joined_at:
+                                        joined_date_kst = m.joined_at.astimezone(KST).date()
+                                        user_id_to_joined_at[m.id] = joined_date_kst
                                         base = m.joined_at.astimezone(KST).strftime("%y%m%d")
                                         same_day = [mm for mm in g.members if mm.joined_at and mm.joined_at.date() == m.joined_at.date() and not mm.bot]
                                         same_day_sorted = sorted(same_day, key=lambda mm: (mm.joined_at, mm.id))
@@ -256,7 +261,8 @@ async def main() -> None:
                                         user_id_to_stuno[m.id] = f"{base}{suffix}"
                         await set_user_nicknames(g.id, user_id_to_nick)
                         await set_user_student_nos(g.id, user_id_to_stuno)
-                        logging.info("Upserted nicknames for %s users in guild %s", len(user_id_to_nick), g.id)
+                        await set_user_joined_ats(g.id, user_id_to_joined_at)
+                        logging.info("Upserted nicknames and joined_at for %s users in guild %s", len(user_id_to_nick), g.id)
                     except Exception as nick_exc:
                         logging.warning("Nickname upsert failed for guild %s: %s", g.id, nick_exc)
             except Exception as prov_exc:
@@ -270,7 +276,7 @@ async def main() -> None:
     @bot.event
     async def on_member_join(member: discord.Member):
         try:
-            from core.database import ensure_user, set_user_nickname, set_user_student_no
+            from core.database import ensure_user, set_user_nickname, set_user_student_no, set_user_joined_at
             await ensure_user(member.id, member.guild.id)
             # Mark status active on join
             try:
@@ -287,8 +293,12 @@ async def main() -> None:
             # Store current nickname/display name into DB
             nickname = member.nick or member.display_name or str(member)
             await set_user_nickname(member.id, member.guild.id, nickname)
-            # Store student number
+            # Store student number and joined_at
             if member.joined_at:
+                joined_date_kst = member.joined_at.astimezone(KST).date()
+                # Save joined_at to DB
+                await set_user_joined_at(member.id, member.guild.id, joined_date_kst)
+                # Compute student number
                 base = member.joined_at.astimezone(KST).strftime("%y%m%d")
                 same_day = [m for m in member.guild.members if m.joined_at and m.joined_at.date() == member.joined_at.date() and not m.bot]
                 same_day_sorted = sorted(same_day, key=lambda m: (m.joined_at, m.id))

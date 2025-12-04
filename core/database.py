@@ -134,6 +134,23 @@ async def set_user_student_no(user_id: int, guild_id: int, student_no: str) -> N
         )
 
 
+async def set_user_joined_at(user_id: int, guild_id: int, joined_at: date) -> None:
+    """Upsert joined_at (서버 가입일) for a user."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_user_exists(conn, user_id, guild_id)
+        await conn.execute(
+            """
+            UPDATE users
+            SET joined_at=$1
+            WHERE user_id=$2 AND guild_id=$3
+            """,
+            joined_at,
+            user_id,
+            guild_id,
+        )
+
+
 async def set_user_student_nos(guild_id: int, user_id_to_stuno: Dict[int, str]) -> None:
     if not user_id_to_stuno:
         return
@@ -145,6 +162,23 @@ async def set_user_student_nos(guild_id: int, user_id_to_stuno: Dict[int, str]) 
             INSERT INTO users (user_id, guild_id, student_no)
             VALUES ($1, $2, $3)
             ON CONFLICT (user_id, guild_id) DO UPDATE SET student_no=EXCLUDED.student_no
+            """,
+            records,
+        )
+
+
+async def set_user_joined_ats(guild_id: int, user_id_to_joined_at: Dict[int, date]) -> None:
+    """Bulk upsert joined_at (서버 가입일) for many users at once."""
+    if not user_id_to_joined_at:
+        return
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        records = [(uid, guild_id, joined) for uid, joined in user_id_to_joined_at.items()]
+        await conn.executemany(
+            """
+            INSERT INTO users (user_id, guild_id, joined_at)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, guild_id) DO UPDATE SET joined_at=EXCLUDED.joined_at
             """,
             records,
         )
