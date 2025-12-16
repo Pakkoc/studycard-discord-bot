@@ -1,5 +1,5 @@
 """
-과거 채팅 메시지를 조회하여 chat_activity 및 emoji_usage 테이블에 백필하는 스크립트.
+과거 채팅 메시지를 조회하여 chat_activity 및 reaction_usage 테이블에 백필하는 스크립트.
 
 사용법:
   python scripts/backfill_chat_activity.py [--days 30]
@@ -12,7 +12,6 @@ import asyncio
 import argparse
 import logging
 import os
-import re
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -26,25 +25,9 @@ load_dotenv()
 
 import discord
 import asyncpg
-import emoji as emoji_lib
 
 # 한국 시간대 (KST, UTC+9)
 KST = timezone(timedelta(hours=9))
-
-# Emoji parsing
-CUSTOM_EMOJI_PATTERN = re.compile(r'<a?:\w+:\d+>')
-
-def extract_emojis(text: str) -> list[str]:
-    """Extract all emojis (unicode and custom Discord emojis) from text."""
-    emojis = []
-    # Unicode emojis
-    for char in text:
-        if emoji_lib.is_emoji(char):
-            emojis.append(char)
-    # Custom Discord emojis (e.g., <:name:123456>)
-    custom_matches = CUSTOM_EMOJI_PATTERN.findall(text)
-    emojis.extend(custom_matches)
-    return emojis
 
 logging.basicConfig(
     level=logging.INFO,
@@ -86,29 +69,28 @@ async def record_chat_activity_batch(pool: asyncpg.Pool, records: list[tuple[int
         return inserted
 
 
-async def record_emoji_usage_batch(pool: asyncpg.Pool, records: list[tuple[int, int, datetime, list[str]]]) -> int:
-    """Batch insert emoji usage records. Returns number of emoji records processed."""
+async def record_reaction_usage_batch(pool: asyncpg.Pool, records: list[tuple[int, int, datetime, str]]) -> int:
+    """Batch insert reaction usage records. Returns number of reaction records processed."""
     if not records:
         return 0
 
     async with pool.acquire() as conn:
         count = 0
-        for user_id, guild_id, dt, emojis in records:
+        for user_id, guild_id, dt, emoji in records:
             usage_date = dt.date()
-            for emoji in emojis:
-                await conn.execute(
-                    """
-                    INSERT INTO emoji_usage (user_id, guild_id, emoji, usage_date, count)
-                    VALUES ($1, $2, $3, $4, 1)
-                    ON CONFLICT (user_id, guild_id, emoji, usage_date)
-                    DO UPDATE SET count = emoji_usage.count + 1
-                    """,
-                    user_id,
-                    guild_id,
-                    emoji,
-                    usage_date,
-                )
-                count += 1
+            await conn.execute(
+                """
+                INSERT INTO reaction_usage (user_id, guild_id, emoji, usage_date, count)
+                VALUES ($1, $2, $3, $4, 1)
+                ON CONFLICT (user_id, guild_id, emoji, usage_date)
+                DO UPDATE SET count = reaction_usage.count + 1
+                """,
+                user_id,
+                guild_id,
+                emoji,
+                usage_date,
+            )
+            count += 1
         return count
 
 
@@ -119,11 +101,11 @@ async def backfill_channel(
     guild_id: int,
     valid_user_ids: set[int],
 ) -> tuple[int, int]:
-    """Backfill chat activity and emoji usage from a single channel. Returns (chat_records, emoji_records)."""
+    """Backfill chat activity and reaction usage from a single channel. Returns (chat_records, reaction_records)."""
     total_chat_inserted = 0
-    total_emoji_count = 0
+    total_reaction_count = 0
     chat_batch: list[tuple[int, int, datetime]] = []
-    emoji_batch: list[tuple[int, int, datetime, list[str]]] = []
+    reaction_batch: list[tuple[int, int, datetime, str]] = []
     batch_size = 100
     message_count = 0
 
@@ -140,10 +122,20 @@ async def backfill_channel(
             created_kst = message.created_at.astimezone(KST).replace(tzinfo=None)
             chat_batch.append((message.author.id, guild_id, created_kst))
 
-            # Extract emojis
-            emojis = extract_emojis(message.content)
-            if emojis:
-                emoji_batch.append((message.author.id, guild_id, created_kst, emojis))
+            # Collect reactions from this message
+            for reaction in message.reactions:
+                emoji_str = str(reaction.emoji)
+                try:
+                    async for user in reaction.users():
+                        if user.bot:
+                            continue
+                        if user.id not in valid_user_ids:
+                            continue
+                        reaction_batch.append((user.id, guild_id, created_kst, emoji_str))
+                except discord.Forbidden:
+                    pass
+                except Exception as e:
+                    logger.warning(f"    반응 유저 조회 실패: {e}")
 
             message_count += 1
 
@@ -152,26 +144,26 @@ async def backfill_channel(
                 total_chat_inserted += inserted
                 chat_batch.clear()
 
-                emoji_count = await record_emoji_usage_batch(pool, emoji_batch)
-                total_emoji_count += emoji_count
-                emoji_batch.clear()
+                reaction_count = await record_reaction_usage_batch(pool, reaction_batch)
+                total_reaction_count += reaction_count
+                reaction_batch.clear()
 
         # Process remaining batches
         if chat_batch:
             inserted = await record_chat_activity_batch(pool, chat_batch)
             total_chat_inserted += inserted
-        if emoji_batch:
-            emoji_count = await record_emoji_usage_batch(pool, emoji_batch)
-            total_emoji_count += emoji_count
+        if reaction_batch:
+            reaction_count = await record_reaction_usage_batch(pool, reaction_batch)
+            total_reaction_count += reaction_count
 
-        logger.info(f"  #{channel.name}: {message_count} msgs, {total_chat_inserted} chat records, {total_emoji_count} emojis")
+        logger.info(f"  #{channel.name}: {message_count} msgs, {total_chat_inserted} chat records, {total_reaction_count} reactions")
 
     except discord.Forbidden:
         logger.warning(f"  #{channel.name}: 접근 권한 없음 (스킵)")
     except Exception as e:
         logger.error(f"  #{channel.name}: 오류 발생 - {e}")
 
-    return total_chat_inserted, total_emoji_count
+    return total_chat_inserted, total_reaction_count
 
 
 async def get_valid_user_ids(pool: asyncpg.Pool, guild_id: int) -> set[int]:
@@ -189,10 +181,10 @@ async def backfill_guild(
     pool: asyncpg.Pool,
     days: int,
 ) -> tuple[int, int]:
-    """Backfill chat activity and emoji usage for all channels in a guild."""
+    """Backfill chat activity and reaction usage for all channels in a guild."""
     after_date = datetime.now(timezone.utc) - timedelta(days=days)
     total_chat = 0
-    total_emoji = 0
+    total_reaction = 0
 
     logger.info(f"길드 '{guild.name}' (ID: {guild.id}) 백필 시작...")
     logger.info(f"  조회 기간: {days}일 전부터 현재까지")
@@ -206,9 +198,9 @@ async def backfill_guild(
     logger.info(f"  텍스트 채널 수: {len(text_channels)}")
 
     for channel in text_channels:
-        chat, emoji = await backfill_channel(channel, pool, after_date, guild.id, valid_user_ids)
+        chat, reaction = await backfill_channel(channel, pool, after_date, guild.id, valid_user_ids)
         total_chat += chat
-        total_emoji += emoji
+        total_reaction += reaction
         # Small delay to avoid rate limiting
         await asyncio.sleep(0.5)
 
@@ -219,15 +211,15 @@ async def backfill_guild(
             try:
                 threads = channel.threads
                 for thread in threads:
-                    chat, emoji = await backfill_channel(thread, pool, after_date, guild.id, valid_user_ids)
+                    chat, reaction = await backfill_channel(thread, pool, after_date, guild.id, valid_user_ids)
                     total_chat += chat
-                    total_emoji += emoji
+                    total_reaction += reaction
                     await asyncio.sleep(0.5)
             except Exception as e:
                 logger.warning(f"  포럼 '{channel.name}' 스레드 조회 실패: {e}")
 
-    logger.info(f"길드 '{guild.name}' 완료: 채팅 {total_chat}개, 이모지 {total_emoji}개")
-    return total_chat, total_emoji
+    logger.info(f"길드 '{guild.name}' 완료: 채팅 {total_chat}개, 반응 {total_reaction}개")
+    return total_chat, total_reaction
 
 
 async def main(days: int):
@@ -252,13 +244,13 @@ async def main(days: int):
         logger.info(f"Discord 로그인 완료: {client.user}")
 
         total_chat = 0
-        total_emoji = 0
+        total_reaction = 0
         for guild in client.guilds:
-            chat, emoji = await backfill_guild(guild, pool, days)
+            chat, reaction = await backfill_guild(guild, pool, days)
             total_chat += chat
-            total_emoji += emoji
+            total_reaction += reaction
 
-        logger.info(f"=== 백필 완료: 채팅 {total_chat}개, 이모지 {total_emoji}개 ===")
+        logger.info(f"=== 백필 완료: 채팅 {total_chat}개, 반응 {total_reaction}개 ===")
 
         await pool.close()
         await client.close()

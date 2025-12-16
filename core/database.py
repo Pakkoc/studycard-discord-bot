@@ -919,26 +919,23 @@ async def record_chat_activity(user_id: int, guild_id: int, activity_date: date)
         return result == "INSERT 0 1"
 
 
-async def record_emoji_usage(user_id: int, guild_id: int, emojis: list[str], usage_date: date) -> None:
-    """Record emoji usage for a user. Increments count if already exists."""
-    if not emojis:
-        return
+async def record_reaction_usage(user_id: int, guild_id: int, emoji: str, usage_date: date) -> None:
+    """Record a reaction given by a user. Increments count if already exists."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         await ensure_user_exists(conn, user_id, guild_id)
-        for emoji in emojis:
-            await conn.execute(
-                """
-                INSERT INTO emoji_usage (user_id, guild_id, emoji, usage_date, count)
-                VALUES ($1, $2, $3, $4, 1)
-                ON CONFLICT (user_id, guild_id, emoji, usage_date)
-                DO UPDATE SET count = emoji_usage.count + 1
-                """,
-                user_id,
-                guild_id,
-                emoji,
-                usage_date,
-            )
+        await conn.execute(
+            """
+            INSERT INTO reaction_usage (user_id, guild_id, emoji, usage_date, count)
+            VALUES ($1, $2, $3, $4, 1)
+            ON CONFLICT (user_id, guild_id, emoji, usage_date)
+            DO UPDATE SET count = reaction_usage.count + 1
+            """,
+            user_id,
+            guild_id,
+            emoji,
+            usage_date,
+        )
 
 
 async def main() -> None:

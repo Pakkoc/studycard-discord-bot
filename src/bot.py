@@ -453,23 +453,6 @@ async def main() -> None:
     # In-memory set for today's chat activity (to avoid redundant DB calls)
     _chat_activity_recorded: set[tuple[int, int, str]] = set()
 
-    # Regex for parsing emojis
-    import re
-    import emoji as emoji_lib
-    CUSTOM_EMOJI_PATTERN = re.compile(r'<a?:\w+:\d+>')
-
-    def extract_emojis(text: str) -> list[str]:
-        """Extract all emojis (unicode and custom Discord emojis) from text."""
-        emojis = []
-        # Unicode emojis
-        for char in text:
-            if emoji_lib.is_emoji(char):
-                emojis.append(char)
-        # Custom Discord emojis (e.g., <:name:123456>)
-        custom_matches = CUSTOM_EMOJI_PATTERN.findall(text)
-        emojis.extend(custom_matches)
-        return emojis
-
     @bot.event
     async def on_message(message: discord.Message):
         # Ignore bot/self
@@ -491,15 +474,6 @@ async def main() -> None:
                     await record_chat_activity(message.author.id, message.guild.id, today)
                 except Exception as exc:
                     logging.warning("Failed to record chat activity: %s", exc)
-
-            # Record emoji usage
-            emojis = extract_emojis(message.content)
-            if emojis:
-                try:
-                    from core.database import record_emoji_usage
-                    await record_emoji_usage(message.author.id, message.guild.id, emojis, today)
-                except Exception as exc:
-                    logging.warning("Failed to record emoji usage: %s", exc)
 
         # Only handle plain text channels here. Threads (forum posts & replies) are handled separately.
         if not isinstance(message.channel, discord.TextChannel):
@@ -532,6 +506,24 @@ async def main() -> None:
                     logging.warning("No available channel to send level-up message in guild %s", message.guild.id)
         except Exception as exc:
             logging.warning("Failed to add post XP: %s", exc)
+
+    @bot.event
+    async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+        """Record reaction usage when a user adds a reaction to a message."""
+        # Ignore bots
+        if payload.member and payload.member.bot:
+            return
+        if not payload.guild_id:
+            return
+
+        try:
+            from core.database import record_reaction_usage
+            today = now_kst_naive().date()
+            # Get emoji string representation
+            emoji_str = str(payload.emoji)
+            await record_reaction_usage(payload.user_id, payload.guild_id, emoji_str, today)
+        except Exception as exc:
+            logging.warning("Failed to record reaction usage: %s", exc)
 
     @bot.event
     async def on_thread_create(thread: discord.Thread):
