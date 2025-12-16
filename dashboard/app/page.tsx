@@ -64,31 +64,31 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
       </div>
       <form
         method="get"
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}
       >
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", flex: "1 1 auto" }}>
           <input
             type="text"
             name="q"
-            placeholder="닉네임 / 학번 / UserID 포함 검색"
+            placeholder="닉네임 / 학번 검색"
             defaultValue={q}
-            style={{ padding: 8, width: 380 }}
+            style={{ padding: 8, width: 240, minWidth: 160 }}
           />
           <input type="hidden" name="page" value="1" />
           <input type="hidden" name="sort" value={sort} />
           <input type="hidden" name="order" value={order} />
           <button type="submit" style={{ padding: "8px 12px" }}>검색</button>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div className="nav-buttons" style={{ display: "flex", gap: 12, flexShrink: 0 }}>
           <a
             href="/monthly"
-            style={{ padding: "10px 14px", border: "1px solid #1f2937", borderRadius: 8, textDecoration: "none" }}
+            style={{ padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 8, textDecoration: "none", whiteSpace: "nowrap" }}
           >
             월간 랭킹
           </a>
           <a
             href="/stats"
-            style={{ padding: "10px 14px", border: "1px solid #1f2937", borderRadius: 8, textDecoration: "none" }}
+            style={{ padding: "10px 14px", border: "1px solid var(--border)", borderRadius: 8, textDecoration: "none", whiteSpace: "nowrap" }}
           >
             통계보기
           </a>

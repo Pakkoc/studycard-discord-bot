@@ -31,7 +31,7 @@ input { padding: 10px 12px; }
 button { padding: 10px 12px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
 
-.container { padding: 16px 32px; max-width: 1600px; margin: 0 auto; }
+.container { padding: 16px 32px; max-width: 1200px; margin: 0 auto; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .title { font-size: 24px; font-weight: 700; margin: 0 0 8px 0; }
 .subtle { color: var(--muted); font-size: 13px; }
@@ -41,21 +41,33 @@ button:hover { border-color: var(--accent); }
 .kpi-value { font-size: 22px; font-weight: 700; }
 
 /* table sort icon */
-.sort-btn { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none; }
-.sort-icon { width: 16px; height: 16px; opacity: 0.9; }
+.sort-btn { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.sort-icon { width: 16px; height: 16px; opacity: 0.9; flex-shrink: 0; }
 .sort-btn:hover { color: var(--text); }
 .sort-active { color: var(--text); opacity: 1; }
 
+/* Table responsive wrapper */
+.table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 /* Responsive */
 @media (max-width: 1024px) {
+  .container { padding: 16px 20px; max-width: 100%; }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 640px) {
-  .container { padding: 12px; }
+@media (max-width: 768px) {
+  .container { padding: 12px 16px; }
   .title { font-size: 20px; }
   .cards { grid-template-columns: 1fr; }
+  table { font-size: 13px; }
+  th, td { padding: 8px 6px; }
+}
+@media (max-width: 640px) {
+  .container { padding: 10px 12px; }
+  .title { font-size: 18px; }
   table { font-size: 12px; }
   th, td { padding: 6px 4px; }
-  input { width: 160px !important; }
+  input { width: 100% !important; max-width: 200px; }
+  .nav-buttons { flex-direction: column; gap: 8px !important; }
+  .nav-buttons a { width: 100%; text-align: center; }
 }
 
