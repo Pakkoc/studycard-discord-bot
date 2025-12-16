@@ -216,4 +216,114 @@ export async function fetchSessionLengthHistogram(
   }
 }
 
+export type MemberGrowthPoint = { label: string; newMembers: number; totalMembers: number };
+
+/** 월간 회원수 추이 (일별) */
+export async function fetchMemberGrowthMonthly(guildId: bigint): Promise<MemberGrowthPoint[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const kstNow = nowKST();
+    const start = new Date(kstNow);
+    start.setUTCDate(start.getUTCDate() - 29);
+    start.setUTCHours(0, 0, 0, 0);
+    const startStr = start.toISOString().slice(0, 10);
+
+    // 일별 신규 가입자 수
+    const { rows: dailyNew } = await client.query(
+      `
+      SELECT to_char(joined_at, 'YYYY-MM-DD') AS day, COUNT(*)::int AS cnt
+      FROM users
+      WHERE guild_id = $1 AND joined_at >= $2::date AND status = 'active'
+      GROUP BY day
+      ORDER BY day
+      `,
+      [guildId.toString(), startStr]
+    );
+
+    // 시작일 이전 누적 회원수
+    const { rows: baseRows } = await client.query(
+      `
+      SELECT COUNT(*)::int AS cnt
+      FROM users
+      WHERE guild_id = $1 AND joined_at < $2::date AND status = 'active'
+      `,
+      [guildId.toString(), startStr]
+    );
+    let cumulative = Number(baseRows?.[0]?.cnt ?? 0);
+
+    const dailyMap = new Map<string, number>();
+    for (const r of dailyNew) {
+      dailyMap.set(String(r.day), Number(r.cnt));
+    }
+
+    const out: MemberGrowthPoint[] = [];
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      const newCount = dailyMap.get(key) ?? 0;
+      cumulative += newCount;
+      out.push({ label: key.slice(5), newMembers: newCount, totalMembers: cumulative });
+    }
+    return out;
+  } finally {
+    client.release();
+  }
+}
+
+/** 연간 회원수 추이 (월별) */
+export async function fetchMemberGrowthYearly(guildId: bigint): Promise<MemberGrowthPoint[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const kstNow = nowKST();
+    const endMonth = new Date(kstNow.getFullYear(), kstNow.getMonth(), 1);
+    const startMonth = new Date(endMonth);
+    startMonth.setMonth(startMonth.getMonth() - 11);
+    const startStr = startMonth.toISOString().slice(0, 10);
+
+    // 월별 신규 가입자 수
+    const { rows: monthlyNew } = await client.query(
+      `
+      SELECT to_char(joined_at, 'YYYY-MM') AS month, COUNT(*)::int AS cnt
+      FROM users
+      WHERE guild_id = $1 AND joined_at >= $2::date AND status = 'active'
+      GROUP BY month
+      ORDER BY month
+      `,
+      [guildId.toString(), startStr]
+    );
+
+    // 시작월 이전 누적 회원수
+    const { rows: baseRows } = await client.query(
+      `
+      SELECT COUNT(*)::int AS cnt
+      FROM users
+      WHERE guild_id = $1 AND joined_at < $2::date AND status = 'active'
+      `,
+      [guildId.toString(), startStr]
+    );
+    let cumulative = Number(baseRows?.[0]?.cnt ?? 0);
+
+    const monthlyMap = new Map<string, number>();
+    for (const r of monthlyNew) {
+      monthlyMap.set(String(r.month), Number(r.cnt));
+    }
+
+    const out: MemberGrowthPoint[] = [];
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(startMonth);
+      d.setMonth(startMonth.getMonth() + i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const newCount = monthlyMap.get(key) ?? 0;
+      cumulative += newCount;
+      out.push({ label: key.slice(2), newMembers: newCount, totalMembers: cumulative });
+    }
+    return out;
+  } finally {
+    client.release();
+  }
+}
+
 

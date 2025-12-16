@@ -1,7 +1,8 @@
 import LineChart from "@/components/LineChart";
 import BarChart from "@/components/BarChart";
-import { fetchSummaryToday, fetchDailyTrend, fetchLevelDistribution, fetchSessionLengthHistogram } from "@/lib/analytics";
-import type { SummaryToday, DailyTrendPoint, LevelBucket, SessionBucket } from "@/lib/analytics";
+import MemberGrowthChart from "@/components/MemberGrowthChart";
+import { fetchSummaryToday, fetchDailyTrend, fetchLevelDistribution, fetchSessionLengthHistogram, fetchMemberGrowthMonthly, fetchMemberGrowthYearly } from "@/lib/analytics";
+import type { SummaryToday, DailyTrendPoint, LevelBucket, SessionBucket, MemberGrowthPoint } from "@/lib/analytics";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ export default async function StatsPage() {
   let trend: DailyTrendPoint[] = [];
   let levelDist: LevelBucket[] = [];
   let sessionHist: SessionBucket[] = [];
+  let memberGrowthMonthly: MemberGrowthPoint[] = [];
+  let memberGrowthYearly: MemberGrowthPoint[] = [];
 
   if (!hasDb) {
     errorMessage = "환경 변수 DATABASE_URL이 설정되지 않아 데이터를 불러올 수 없습니다.";
@@ -32,11 +35,13 @@ export default async function StatsPage() {
 
   if (!errorMessage && !isBuildPhase && hasGuild) {
     try {
-      [summary, trend, levelDist, sessionHist] = await Promise.all([
+      [summary, trend, levelDist, sessionHist, memberGrowthMonthly, memberGrowthYearly] = await Promise.all([
         fetchSummaryToday(guildId),
         fetchDailyTrend(guildId, 30),
         fetchLevelDistribution(guildId),
         fetchSessionLengthHistogram(guildId, 30),
+        fetchMemberGrowthMonthly(guildId),
+        fetchMemberGrowthYearly(guildId),
       ]);
     } catch (e) {
       console.error("[StatsPage] Error loading stats:", e);
@@ -91,6 +96,11 @@ export default async function StatsPage() {
                 { label: "DAU", data: trend.map((t) => t.dau), color: "#fca5a5" },
               ]}
             />
+          </div>
+
+          <div className="panel" style={{ marginBottom: 16 }}>
+            <div className="title" style={{ marginBottom: 8 }}>회원수 추이</div>
+            <MemberGrowthChart monthlyData={memberGrowthMonthly} yearlyData={memberGrowthYearly} />
           </div>
 
           {/* 리더보드 섹션은 요구사항에 따라 제거됨 */}
