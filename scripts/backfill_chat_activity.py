@@ -117,6 +117,7 @@ async def backfill_channel(
     pool: asyncpg.Pool,
     after_date: datetime,
     guild_id: int,
+    valid_user_ids: set[int],
 ) -> tuple[int, int]:
     """Backfill chat activity and emoji usage from a single channel. Returns (chat_records, emoji_records)."""
     total_chat_inserted = 0
@@ -129,6 +130,10 @@ async def backfill_channel(
     try:
         async for message in channel.history(limit=None, after=after_date, oldest_first=True):
             if message.author.bot:
+                continue
+
+            # Skip users not in the database
+            if message.author.id not in valid_user_ids:
                 continue
 
             # Convert to KST
@@ -169,6 +174,16 @@ async def backfill_channel(
     return total_chat_inserted, total_emoji_count
 
 
+async def get_valid_user_ids(pool: asyncpg.Pool, guild_id: int) -> set[int]:
+    """Get set of user_ids that exist in the users table for this guild."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT user_id FROM users WHERE guild_id = $1",
+            guild_id,
+        )
+        return {row["user_id"] for row in rows}
+
+
 async def backfill_guild(
     guild: discord.Guild,
     pool: asyncpg.Pool,
@@ -182,12 +197,16 @@ async def backfill_guild(
     logger.info(f"길드 '{guild.name}' (ID: {guild.id}) 백필 시작...")
     logger.info(f"  조회 기간: {days}일 전부터 현재까지")
 
+    # Get valid user IDs from database
+    valid_user_ids = await get_valid_user_ids(pool, guild.id)
+    logger.info(f"  DB에 등록된 유저 수: {len(valid_user_ids)}명")
+
     # Get all text channels
     text_channels = [ch for ch in guild.channels if isinstance(ch, discord.TextChannel)]
     logger.info(f"  텍스트 채널 수: {len(text_channels)}")
 
     for channel in text_channels:
-        chat, emoji = await backfill_channel(channel, pool, after_date, guild.id)
+        chat, emoji = await backfill_channel(channel, pool, after_date, guild.id, valid_user_ids)
         total_chat += chat
         total_emoji += emoji
         # Small delay to avoid rate limiting
@@ -200,7 +219,7 @@ async def backfill_guild(
             try:
                 threads = channel.threads
                 for thread in threads:
-                    chat, emoji = await backfill_channel(thread, pool, after_date, guild.id)
+                    chat, emoji = await backfill_channel(thread, pool, after_date, guild.id, valid_user_ids)
                     total_chat += chat
                     total_emoji += emoji
                     await asyncio.sleep(0.5)
