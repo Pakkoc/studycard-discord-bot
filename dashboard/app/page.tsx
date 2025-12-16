@@ -108,7 +108,8 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
                 {SortableTh({ keyName: "today_seconds", label: "Today(h)", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "week_seconds", label: "Week(h)", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "month_seconds", label: "Month(h)", currentSort: sort, currentOrder: order, q })}
-                {SortableTh({ keyName: "month_reaction_count", label: "Reactions", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "total_reaction_count", label: "React(All)", currentSort: sort, currentOrder: order, q })}
+                {SortableTh({ keyName: "month_reaction_count", label: "React(M)", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "last_seen_at", label: "Last Seen", currentSort: sort, currentOrder: order, q })}
               </tr>
             </thead>
@@ -125,6 +126,7 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
                   <td style={tdMono}>{secondsToHours(r.today_seconds)}</td>
                   <td style={tdMono}>{secondsToHours(r.week_seconds)}</td>
                   <td style={tdMono}>{secondsToHours(r.month_seconds)}</td>
+                  <td style={tdMono}>{r.total_reaction_count}</td>
                   <td style={tdMono}>{r.month_reaction_count}</td>
                   <td style={td}>{r.last_seen_at ?? ""}</td>
                 </tr>
