@@ -453,6 +453,23 @@ async def main() -> None:
     # In-memory set for today's chat activity (to avoid redundant DB calls)
     _chat_activity_recorded: set[tuple[int, int, str]] = set()
 
+    # Regex for parsing emojis
+    import re
+    import emoji as emoji_lib
+    CUSTOM_EMOJI_PATTERN = re.compile(r'<a?:\w+:\d+>')
+
+    def extract_emojis(text: str) -> list[str]:
+        """Extract all emojis (unicode and custom Discord emojis) from text."""
+        emojis = []
+        # Unicode emojis
+        for char in text:
+            if emoji_lib.is_emoji(char):
+                emojis.append(char)
+        # Custom Discord emojis (e.g., <:name:123456>)
+        custom_matches = CUSTOM_EMOJI_PATTERN.findall(text)
+        emojis.extend(custom_matches)
+        return emojis
+
     @bot.event
     async def on_message(message: discord.Message):
         # Ignore bot/self
@@ -464,15 +481,25 @@ async def main() -> None:
 
         # Record chat activity for DAU tracking (once per user per day)
         if message.guild:
-            today_str = now_kst_naive().date().isoformat()
+            today = now_kst_naive().date()
+            today_str = today.isoformat()
             chat_key = (message.guild.id, message.author.id, today_str)
             if chat_key not in _chat_activity_recorded:
                 _chat_activity_recorded.add(chat_key)
                 try:
                     from core.database import record_chat_activity
-                    await record_chat_activity(message.author.id, message.guild.id, now_kst_naive().date())
+                    await record_chat_activity(message.author.id, message.guild.id, today)
                 except Exception as exc:
                     logging.warning("Failed to record chat activity: %s", exc)
+
+            # Record emoji usage
+            emojis = extract_emojis(message.content)
+            if emojis:
+                try:
+                    from core.database import record_emoji_usage
+                    await record_emoji_usage(message.author.id, message.guild.id, emojis, today)
+                except Exception as exc:
+                    logging.warning("Failed to record emoji usage: %s", exc)
 
         # Only handle plain text channels here. Threads (forum posts & replies) are handled separately.
         if not isinstance(message.channel, discord.TextChannel):

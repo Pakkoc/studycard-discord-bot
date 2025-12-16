@@ -25,6 +25,7 @@ export type GuildUserRow = {
   today_seconds: number;
   week_seconds: number;
   month_seconds: number;
+  month_emoji_count: number;
   last_seen_at: string | null;
 };
 
@@ -39,6 +40,7 @@ export type SortKey =
   | "today_seconds"
   | "week_seconds"
   | "month_seconds"
+  | "month_emoji_count"
   | "last_seen_at";
 
 export type SortOrder = "asc" | "desc";
@@ -103,6 +105,12 @@ export async function fetchGuildUserStats(
           date_trunc('day', $${nowIdx}::timestamp) AS today_start,
           date_trunc('week', $${nowIdx}::timestamp) AS week_start,
           date_trunc('month', $${nowIdx}::timestamp) AS month_start
+      ),
+      emoji_counts AS (
+        SELECT user_id, guild_id, COALESCE(SUM(count), 0) AS month_emoji_count
+        FROM emoji_usage
+        WHERE guild_id = $1 AND usage_date >= (SELECT month_start FROM bounds)::date
+        GROUP BY user_id, guild_id
       )
       SELECT
         u.user_id,
@@ -115,15 +123,19 @@ export async function fetchGuildUserStats(
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT today_start FROM bounds) THEN vs.duration_seconds END), 0) AS today_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT week_start FROM bounds) THEN vs.duration_seconds END), 0) AS week_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT month_start FROM bounds) THEN vs.duration_seconds END), 0) AS month_seconds,
+        COALESCE(ec.month_emoji_count, 0) AS month_emoji_count,
         to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
       FROM users u
       LEFT JOIN voice_sessions vs
         ON vs.user_id = u.user_id
        AND vs.guild_id = u.guild_id
        AND vs.ended_at IS NOT NULL
+      LEFT JOIN emoji_counts ec
+        ON ec.user_id = u.user_id
+       AND ec.guild_id = u.guild_id
       WHERE u.guild_id = $1
       ${filterSql}
-      GROUP BY u.user_id, u.nickname, u.student_no, u.status, u.level_name, u.xp, u.total_seconds, u.last_seen_at
+      GROUP BY u.user_id, u.nickname, u.student_no, u.status, u.level_name, u.xp, u.total_seconds, u.last_seen_at, ec.month_emoji_count
       ORDER BY xp DESC, total_seconds DESC
       LIMIT $2
     `;
@@ -141,6 +153,7 @@ export async function fetchGuildUserStats(
       today_seconds: Number(r.today_seconds ?? 0),
       week_seconds: Number(r.week_seconds ?? 0),
       month_seconds: Number(r.month_seconds ?? 0),
+      month_emoji_count: Number(r.month_emoji_count ?? 0),
       last_seen_at: (r.last_seen_at as string | null) ?? null,
     }));
   } finally {
@@ -174,6 +187,7 @@ export async function fetchGuildUserStatsPaged(
       today_seconds: true,
       week_seconds: true,
       month_seconds: true,
+      month_emoji_count: true,
       last_seen_at: true,
     };
     const sortKey: SortKey = allowedSort[sort] ? sort : "xp";
@@ -216,6 +230,12 @@ export async function fetchGuildUserStatsPaged(
           date_trunc('day', $${nowIdx}::timestamp) AS today_start,
           date_trunc('week', $${nowIdx}::timestamp) AS week_start,
           date_trunc('month', $${nowIdx}::timestamp) AS month_start
+      ),
+      emoji_counts AS (
+        SELECT user_id, guild_id, COALESCE(SUM(count), 0) AS month_emoji_count
+        FROM emoji_usage
+        WHERE guild_id = $1 AND usage_date >= (SELECT month_start FROM bounds)::date
+        GROUP BY user_id, guild_id
       )
       SELECT
         u.user_id,
@@ -228,15 +248,19 @@ export async function fetchGuildUserStatsPaged(
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT today_start FROM bounds) THEN vs.duration_seconds END), 0) AS today_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT week_start FROM bounds) THEN vs.duration_seconds END), 0) AS week_seconds,
         COALESCE(SUM(CASE WHEN vs.ended_at >= (SELECT month_start FROM bounds) THEN vs.duration_seconds END), 0) AS month_seconds,
+        COALESCE(ec.month_emoji_count, 0) AS month_emoji_count,
         to_char(u.last_seen_at, 'YYYY-MM-DD HH24:MI') AS last_seen_at
       FROM users u
       LEFT JOIN voice_sessions vs
         ON vs.user_id = u.user_id
        AND vs.guild_id = u.guild_id
        AND vs.ended_at IS NOT NULL
+      LEFT JOIN emoji_counts ec
+        ON ec.user_id = u.user_id
+       AND ec.guild_id = u.guild_id
       WHERE u.guild_id = $1
       ${query.length > 0 ? " AND (u.nickname ILIKE $2 OR u.student_no ILIKE $2 OR CAST(u.user_id AS TEXT) ILIKE $2) " : ""}
-      GROUP BY u.user_id, u.nickname, u.student_no, u.status, u.level_name, u.xp, u.total_seconds, u.last_seen_at
+      GROUP BY u.user_id, u.nickname, u.student_no, u.status, u.level_name, u.xp, u.total_seconds, u.last_seen_at, ec.month_emoji_count
       ORDER BY ${sortKey} ${sortOrder} NULLS LAST
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
@@ -256,6 +280,7 @@ export async function fetchGuildUserStatsPaged(
         today_seconds: Number(r.today_seconds ?? 0),
         week_seconds: Number(r.week_seconds ?? 0),
         month_seconds: Number(r.month_seconds ?? 0),
+        month_emoji_count: Number(r.month_emoji_count ?? 0),
         last_seen_at: (r.last_seen_at as string | null) ?? null,
       })),
       total,

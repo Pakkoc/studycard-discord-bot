@@ -4,4 +4,5 @@ Pillow==10.3.0
 python-dotenv==1.0.1
 black==24.8.0
 isort==5.13.2
+emoji==2.14.0
 
