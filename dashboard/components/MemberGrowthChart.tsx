@@ -56,6 +56,7 @@ export default function MemberGrowthChart({ monthlyData, yearlyData }: Props) {
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         interaction: {
           mode: "index",
           intersect: false,
@@ -127,7 +128,9 @@ export default function MemberGrowthChart({ monthlyData, yearlyData }: Props) {
           연간
         </button>
       </div>
-      <canvas ref={ref} style={{ width: "100%", height: 260 }} />
+      <div style={{ position: "relative", height: 220 }}>
+        <canvas ref={ref} />
+      </div>
     </div>
   );
 }
