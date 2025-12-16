@@ -88,12 +88,13 @@ export default async function StatsPage() {
           </div>
 
           <div className="panel" style={{ marginBottom: 16 }}>
-            <div className="title" style={{ marginBottom: 8 }}>일간 추이 (총시간/DAU)</div>
+            <div className="title" style={{ marginBottom: 8 }}>일간 추이 (총시간/음성DAU/채팅DAU)</div>
             <LineChart
               labels={trend.map((t) => t.date.slice(5))}
               series={[
                 { label: "Hours", data: trend.map((t) => t.hours), color: "#60a5fa" },
-                { label: "DAU", data: trend.map((t) => t.dau), color: "#fca5a5" },
+                { label: "음성 DAU", data: trend.map((t) => t.dau), color: "#fca5a5" },
+                { label: "채팅 DAU", data: trend.map((t) => t.chatDau), color: "#34d399" },
               ]}
             />
           </div>

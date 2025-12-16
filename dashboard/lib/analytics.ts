@@ -43,7 +43,7 @@ export async function fetchSummaryToday(guildId: bigint): Promise<SummaryToday> 
   }
 }
 
-export type DailyTrendPoint = { date: string; hours: number; dau: number };
+export type DailyTrendPoint = { date: string; hours: number; dau: number; chatDau: number };
 
 export async function fetchDailyTrend(guildId: bigint, days = 30): Promise<DailyTrendPoint[]> {
   const pool = getPool();
@@ -55,9 +55,10 @@ export async function fetchDailyTrend(guildId: bigint, days = 30): Promise<Daily
     start.setUTCDate(start.getUTCDate() - (days - 1));
     start.setUTCHours(0, 0, 0, 0);
     const startStr = start.toISOString().slice(0, 19).replace('T', ' ');
+    const startDateStr = start.toISOString().slice(0, 10);
 
-    // DB가 이미 KST naive datetime으로 저장되어 있으므로 timezone 변환 불필요
-    const { rows } = await client.query(
+    // 음성 DAU 조회
+    const { rows: voiceRows } = await client.query(
       `
       SELECT to_char(date_trunc('day', ended_at), 'YYYY-MM-DD') AS day_label,
              SUM(duration_seconds) AS seconds,
@@ -70,18 +71,40 @@ export async function fetchDailyTrend(guildId: bigint, days = 30): Promise<Daily
       `,
       [guildId.toString(), startStr]
     );
-    const map = new Map<string, { seconds: number; dau: number }>();
-    for (const r of rows) {
+
+    // 채팅 DAU 조회
+    const { rows: chatRows } = await client.query(
+      `
+      SELECT to_char(activity_date, 'YYYY-MM-DD') AS day_label,
+             COUNT(DISTINCT user_id) AS chat_dau
+      FROM chat_activity
+      WHERE guild_id=$1 AND activity_date >= $2::date
+      GROUP BY day_label
+      ORDER BY day_label
+      `,
+      [guildId.toString(), startDateStr]
+    );
+
+    const voiceMap = new Map<string, { seconds: number; dau: number }>();
+    for (const r of voiceRows) {
       const day = String(r.day_label);
-      map.set(day, { seconds: Number(r.seconds ?? 0), dau: Number(r.dau ?? 0) });
+      voiceMap.set(day, { seconds: Number(r.seconds ?? 0), dau: Number(r.dau ?? 0) });
     }
+
+    const chatMap = new Map<string, number>();
+    for (const r of chatRows) {
+      const day = String(r.day_label);
+      chatMap.set(day, Number(r.chat_dau ?? 0));
+    }
+
     const out: DailyTrendPoint[] = [];
     for (let i = 0; i < days; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       const key = d.toISOString().slice(0, 10);
-      const v = map.get(key) ?? { seconds: 0, dau: 0 };
-      out.push({ date: key, hours: Math.round((v.seconds / 3600) * 100) / 100, dau: v.dau });
+      const v = voiceMap.get(key) ?? { seconds: 0, dau: 0 };
+      const chatDau = chatMap.get(key) ?? 0;
+      out.push({ date: key, hours: Math.round((v.seconds / 3600) * 100) / 100, dau: v.dau, chatDau });
     }
     return out;
   } finally {

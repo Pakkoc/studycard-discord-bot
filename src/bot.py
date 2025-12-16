@@ -450,6 +450,9 @@ async def main() -> None:
     POST_XP_COOLDOWN_SEC = get_env_int("POST_XP_COOLDOWN_SEC", 60)
     _last_post_ts: dict[tuple[int, int], float] = {}
 
+    # In-memory set for today's chat activity (to avoid redundant DB calls)
+    _chat_activity_recorded: set[tuple[int, int, str]] = set()
+
     @bot.event
     async def on_message(message: discord.Message):
         # Ignore bot/self
@@ -458,6 +461,19 @@ async def main() -> None:
         # Ensure prefix commands (e.g., !학생증) are processed even with custom on_message
         # Without this, commands.command handlers won't run.
         await bot.process_commands(message)
+
+        # Record chat activity for DAU tracking (once per user per day)
+        if message.guild:
+            today_str = now_kst_naive().date().isoformat()
+            chat_key = (message.guild.id, message.author.id, today_str)
+            if chat_key not in _chat_activity_recorded:
+                _chat_activity_recorded.add(chat_key)
+                try:
+                    from core.database import record_chat_activity
+                    await record_chat_activity(message.author.id, message.guild.id, now_kst_naive().date())
+                except Exception as exc:
+                    logging.warning("Failed to record chat activity: %s", exc)
+
         # Only handle plain text channels here. Threads (forum posts & replies) are handled separately.
         if not isinstance(message.channel, discord.TextChannel):
             return

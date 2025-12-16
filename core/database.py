@@ -901,6 +901,24 @@ async def finalize_open_sessions(min_duration_seconds: int) -> int:
             return finalized_count
 
 
+async def record_chat_activity(user_id: int, guild_id: int, activity_date: date) -> bool:
+    """Record that a user chatted on a given date. Returns True if newly inserted."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await ensure_user_exists(conn, user_id, guild_id)
+        result = await conn.execute(
+            """
+            INSERT INTO chat_activity (user_id, guild_id, activity_date)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, guild_id, activity_date) DO NOTHING
+            """,
+            user_id,
+            guild_id,
+            activity_date,
+        )
+        return result == "INSERT 0 1"
+
+
 async def main() -> None:
     try:
         result = await test_connection()
