@@ -142,13 +142,13 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
 const th: React.CSSProperties = {
   textAlign: "left",
   borderBottom: "1px solid #e5e7eb",
-  padding: "8px 6px",
+  padding: "10px 12px",
   fontWeight: 600,
 };
 
 const td: React.CSSProperties = {
   borderBottom: "1px solid #f1f5f9",
-  padding: "8px 6px",
+  padding: "10px 12px",
 };
 
 const tdMono: React.CSSProperties = {

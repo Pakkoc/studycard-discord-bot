@@ -31,7 +31,7 @@ input { padding: 10px 12px; }
 button { padding: 10px 12px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
 
-.container { padding: 16px; max-width: 1200px; margin: 0 auto; }
+.container { padding: 16px 32px; max-width: 1600px; margin: 0 auto; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .title { font-size: 24px; font-weight: 700; margin: 0 0 8px 0; }
 .subtle { color: var(--muted); font-size: 13px; }
