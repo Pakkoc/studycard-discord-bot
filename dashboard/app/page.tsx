@@ -98,7 +98,6 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
               <tr>
-                {SortableTh({ keyName: "user_id", label: "User ID", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "nickname", label: "Nickname", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "student_no", label: "Student No", currentSort: sort, currentOrder: order, q })}
                 {SortableTh({ keyName: "status", label: "Status", currentSort: sort, currentOrder: order, q })}
@@ -115,7 +114,6 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
             <tbody>
               {rows.map((r) => (
                 <tr key={String(r.user_id)}>
-                  <td style={tdMono}><a href={`/users/${String(r.user_id)}`} style={{ color: "var(--accent)", textDecoration: "none" }}>{String(r.user_id)}</a></td>
                   <td style={td}><a href={`/users/${String(r.user_id)}`} style={{ color: "var(--accent)", textDecoration: "none" }}>{r.nickname ?? ""}</a></td>
                   <td style={tdMono}>{r.student_no ?? ""}</td>
                   <td style={td}><StatusBadge status={r.status} /></td>
