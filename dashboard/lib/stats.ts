@@ -829,11 +829,12 @@ export async function fetchMonthlyRankingPaged(
     const sortKey: MonthlySortKey = allowedSort[sort] ? sort : "month_seconds";
     const sortOrder: SortOrder = order === "asc" ? "asc" : "desc";
 
-    const params: unknown[] = [guildId.toString(), monthStart, nextMonth];
-    let filterSql = "";
+    // Count query uses separate params (no monthStart/nextMonth needed)
+    const countParams: unknown[] = [guildId.toString()];
+    let countFilterSql = "";
     if (query.length > 0) {
-      filterSql = " AND (u.nickname ILIKE $4 OR u.student_no ILIKE $4 OR CAST(u.user_id AS TEXT) ILIKE $4) ";
-      params.push(`%${query}%`);
+      countFilterSql = " AND (u.nickname ILIKE $2 OR u.student_no ILIKE $2 OR CAST(u.user_id AS TEXT) ILIKE $2) ";
+      countParams.push(`%${query}%`);
     }
 
     // Total count
@@ -841,16 +842,22 @@ export async function fetchMonthlyRankingPaged(
       SELECT COUNT(*)::int AS cnt
       FROM users u
       WHERE u.guild_id = $1
-      ${filterSql}
+      ${countFilterSql}
     `;
-    const { rows: countRows } = await client.query(countSql, params);
+    const { rows: countRows } = await client.query(countSql, countParams);
     const total = Number(countRows?.[0]?.cnt ?? 0);
 
-    // Main query
-    const limitIdx = params.length + 1;
-    const offsetIdx = params.length + 2;
-    params.push(limit);
-    params.push(offset);
+    // Main query params
+    const mainParams: unknown[] = [guildId.toString(), monthStart, nextMonth];
+    let filterSql = "";
+    if (query.length > 0) {
+      filterSql = " AND (u.nickname ILIKE $4 OR u.student_no ILIKE $4 OR CAST(u.user_id AS TEXT) ILIKE $4) ";
+      mainParams.push(`%${query}%`);
+    }
+    const limitIdx = mainParams.length + 1;
+    const offsetIdx = mainParams.length + 2;
+    mainParams.push(limit);
+    mainParams.push(offset);
 
     const sql = `
       WITH month_sessions AS (
@@ -890,7 +897,7 @@ export async function fetchMonthlyRankingPaged(
       OFFSET $${offsetIdx}
     `;
 
-    const { rows } = await client.query(sql, params);
+    const { rows } = await client.query(sql, mainParams);
 
     return {
       rows: rows.map((r) => ({
@@ -904,6 +911,9 @@ export async function fetchMonthlyRankingPaged(
       })),
       total,
     };
+  } catch (error) {
+    console.error("[fetchMonthlyRankingPaged] Error:", error);
+    throw error;
   } finally {
     client.release();
   }
