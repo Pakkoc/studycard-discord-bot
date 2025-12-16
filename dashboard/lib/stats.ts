@@ -785,4 +785,147 @@ export async function fetchUserAvailableYears(
   }
 }
 
+export type MonthlyUserRow = {
+  user_id: string;
+  nickname: string | null;
+  student_no: string | null;
+  status: "active" | "left";
+  level_name: string | null;
+  month_seconds: number;
+  month_reaction_count: number;
+};
+
+export type MonthlySortKey = "nickname" | "student_no" | "month_seconds" | "month_reaction_count";
+
+export async function fetchMonthlyRankingPaged(
+  guildId: bigint,
+  month: string, // 'YYYY-MM' format
+  opts: { page?: number; limit?: number; sort?: MonthlySortKey; order?: SortOrder; query?: string } = {}
+): Promise<{ rows: MonthlyUserRow[]; total: number }> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const limit = Math.min(Math.max(Number(opts.limit ?? 20), 1), 500);
+    const page = Math.max(Number(opts.page ?? 1), 1);
+    const offset = (page - 1) * limit;
+    const sort: MonthlySortKey = opts.sort ?? "month_seconds";
+    const order: SortOrder = opts.order ?? "desc";
+    const query = (opts.query ?? "").trim();
+
+    // Parse month to get start/end timestamps
+    const [yearStr, monthStr] = month.split("-");
+    const year = parseInt(yearStr, 10);
+    const mon = parseInt(monthStr, 10);
+    const monthStart = `${year}-${String(mon).padStart(2, "0")}-01 00:00:00`;
+    const nextMonth = mon === 12 ? `${year + 1}-01-01 00:00:00` : `${year}-${String(mon + 1).padStart(2, "0")}-01 00:00:00`;
+
+    // Whitelist sort keys
+    const allowedSort: Record<MonthlySortKey, true> = {
+      nickname: true,
+      student_no: true,
+      month_seconds: true,
+      month_reaction_count: true,
+    };
+    const sortKey: MonthlySortKey = allowedSort[sort] ? sort : "month_seconds";
+    const sortOrder: SortOrder = order === "asc" ? "asc" : "desc";
+
+    const params: unknown[] = [guildId.toString(), monthStart, nextMonth];
+    let filterSql = "";
+    if (query.length > 0) {
+      filterSql = " AND (u.nickname ILIKE $4 OR u.student_no ILIKE $4 OR CAST(u.user_id AS TEXT) ILIKE $4) ";
+      params.push(`%${query}%`);
+    }
+
+    // Total count
+    const countSql = `
+      SELECT COUNT(*)::int AS cnt
+      FROM users u
+      WHERE u.guild_id = $1
+      ${filterSql}
+    `;
+    const { rows: countRows } = await client.query(countSql, params);
+    const total = Number(countRows?.[0]?.cnt ?? 0);
+
+    // Main query
+    const limitIdx = params.length + 1;
+    const offsetIdx = params.length + 2;
+    params.push(limit);
+    params.push(offset);
+
+    const sql = `
+      WITH month_sessions AS (
+        SELECT user_id, guild_id, SUM(duration_seconds) AS month_seconds
+        FROM voice_sessions
+        WHERE guild_id = $1
+          AND ended_at IS NOT NULL
+          AND ended_at >= $2::timestamp
+          AND ended_at < $3::timestamp
+        GROUP BY user_id, guild_id
+      ),
+      month_reactions AS (
+        SELECT user_id, guild_id, COALESCE(SUM(count), 0) AS month_reaction_count
+        FROM reaction_usage
+        WHERE guild_id = $1
+          AND usage_date >= $2::date
+          AND usage_date < $3::date
+        GROUP BY user_id, guild_id
+      )
+      SELECT
+        u.user_id,
+        u.nickname,
+        u.student_no,
+        u.status,
+        u.level_name,
+        COALESCE(ms.month_seconds, 0) AS month_seconds,
+        COALESCE(mr.month_reaction_count, 0) AS month_reaction_count
+      FROM users u
+      LEFT JOIN month_sessions ms
+        ON ms.user_id = u.user_id AND ms.guild_id = u.guild_id
+      LEFT JOIN month_reactions mr
+        ON mr.user_id = u.user_id AND mr.guild_id = u.guild_id
+      WHERE u.guild_id = $1
+      ${filterSql}
+      ORDER BY ${sortKey} ${sortOrder} NULLS LAST
+      LIMIT $${limitIdx}
+      OFFSET $${offsetIdx}
+    `;
+
+    const { rows } = await client.query(sql, params);
+
+    return {
+      rows: rows.map((r) => ({
+        user_id: String(r.user_id),
+        nickname: r.nickname ?? null,
+        student_no: r.student_no ?? null,
+        status: (r.status as string) === "left" ? "left" : "active",
+        level_name: (r.level_name as string | null) ?? null,
+        month_seconds: Number(r.month_seconds ?? 0),
+        month_reaction_count: Number(r.month_reaction_count ?? 0),
+      })),
+      total,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+export async function fetchAvailableMonths(guildId: bigint): Promise<string[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      `
+      SELECT DISTINCT to_char(ended_at, 'YYYY-MM') AS month
+      FROM voice_sessions
+      WHERE guild_id = $1 AND ended_at IS NOT NULL
+      ORDER BY month DESC
+      `,
+      [guildId.toString()]
+    );
+    return rows.map((r) => String(r.month));
+  } finally {
+    client.release();
+  }
+}
+
 

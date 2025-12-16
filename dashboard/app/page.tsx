@@ -79,12 +79,20 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
           <input type="hidden" name="order" value={order} />
           <button type="submit" style={{ padding: "8px 12px" }}>검색</button>
         </div>
-        <a
-          href="/stats"
-          style={{ padding: "10px 14px", border: "1px solid #1f2937", borderRadius: 8, textDecoration: "none" }}
-        >
-          통계보기
-        </a>
+        <div style={{ display: "flex", gap: 12 }}>
+          <a
+            href="/monthly"
+            style={{ padding: "10px 14px", border: "1px solid #1f2937", borderRadius: 8, textDecoration: "none" }}
+          >
+            월간 랭킹
+          </a>
+          <a
+            href="/stats"
+            style={{ padding: "10px 14px", border: "1px solid #1f2937", borderRadius: 8, textDecoration: "none" }}
+          >
+            통계보기
+          </a>
+        </div>
       </form>
 
       {errorMessage ? (
